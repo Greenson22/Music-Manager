@@ -6,8 +6,6 @@ import glob
 # --- KONFIGURASI ---
 FFMPEG_PATH = r'C:\ffmpeg-7.1.1-essentials_build\bin' 
 FOLDER_UTAMA = "musikku"
-FOLDER_AUDIO = os.path.join(FOLDER_UTAMA, "audio")
-# Folder tempat menyimpan semua file JSON
 FOLDER_JSON = os.path.join("data_musik", "hasil") 
 
 def buat_folder_jika_perlu(path_folder):
@@ -16,9 +14,21 @@ def buat_folder_jika_perlu(path_folder):
         os.makedirs(path_folder)
         print(f"Folder '{path_folder}' telah dibuat.")
 
+# <--- PERUBAHAN: Fungsi baru untuk mengurangi duplikasi kode
+def dapatkan_path_output():
+    """Meminta nama folder kustom dari pengguna dan mengembalikan path output."""
+    nama_folder_kustom = input(f"\nMasukkan nama folder di dalam '{FOLDER_UTAMA}' untuk menyimpan hasil download: ").strip()
+    if not nama_folder_kustom:
+        # Ambil nama file JSON sebagai default jika memungkinkan, jika tidak, gunakan default umum
+        nama_folder_kustom = "hasil_unduhan"
+        print(f"Nama folder tidak diisi, menggunakan nama default: '{nama_folder_kustom}'")
+
+    folder_output_kustom = os.path.join(FOLDER_UTAMA, nama_folder_kustom)
+    folder_audio_kustom = os.path.join(folder_output_kustom, "audio")
+    return folder_output_kustom, folder_audio_kustom
+
 def simpan_perubahan_json(file_path, data):
     """Menyimpan seluruh data kembali ke file JSON yang spesifik."""
-    # Tambahkan encoding='utf-8' di sini
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -29,13 +39,13 @@ def progress_hook(d):
     elif d['status'] == 'finished':
         print() 
 
-def unduh_audio_saja(url, nama_file):
+def unduh_audio_saja(url, nama_file, path_output_audio):
     """Hanya mengunduh dan konversi ke audio MP3 dengan nama file kustom."""
-    buat_folder_jika_perlu(FOLDER_AUDIO)
+    buat_folder_jika_perlu(path_output_audio)
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-        'outtmpl': os.path.join(FOLDER_AUDIO, f'{nama_file}.%(ext)s'),
+        'outtmpl': os.path.join(path_output_audio, f'{nama_file}.%(ext)s'),
         'ffmpeg_location': FFMPEG_PATH,
         'progress_hooks': [progress_hook],
     }
@@ -47,12 +57,12 @@ def unduh_audio_saja(url, nama_file):
         print(f"\n   -> ❌ Error saat mengunduh audio: {e}")
         return False
 
-def unduh_video_saja(url, nama_file):
+def unduh_video_saja(url, nama_file, path_output_video):
     """Mengunduh video dalam format asli terbaik dengan nama file kustom."""
-    buat_folder_jika_perlu(FOLDER_UTAMA)
+    buat_folder_jika_perlu(path_output_video)
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
-        'outtmpl': os.path.join(FOLDER_UTAMA, f'{nama_file}.%(ext)s'),
+        'outtmpl': os.path.join(path_output_video, f'{nama_file}.%(ext)s'),
         'ffmpeg_location': FFMPEG_PATH,
         'progress_hooks': [progress_hook],
     }
@@ -67,7 +77,6 @@ def unduh_video_saja(url, nama_file):
 def pilih_file_json():
     """Menampilkan daftar file JSON dan meminta pengguna untuk memilih."""
     buat_folder_jika_perlu(FOLDER_JSON)
-    # Mencari semua file yang berakhiran .json di dalam folder
     daftar_file = glob.glob(os.path.join(FOLDER_JSON, '*.json'))
 
     if not daftar_file:
@@ -76,7 +85,6 @@ def pilih_file_json():
 
     print("\nSilakan pilih file JSON yang ingin diproses:")
     for i, file_path in enumerate(daftar_file):
-        # Menampilkan nama file saja, bukan path lengkap
         print(f"{i + 1}. {os.path.basename(file_path)}")
 
     while True:
@@ -89,7 +97,7 @@ def pilih_file_json():
         except ValueError:
             print("Input tidak valid, harap masukkan angka.")
 
-def proses_dari_json(file_json_path, mode='both'):
+def proses_dari_json(file_json_path, path_output_video, path_output_audio, mode='both'):
     """Membaca file JSON yang dipilih dan mengunduh sesuai mode."""
     print(f"\n--- Memproses dari file '{os.path.basename(file_json_path)}' (Mode: {mode.upper()}) ---")
     try:
@@ -136,18 +144,18 @@ def proses_dari_json(file_json_path, mode='both'):
             sukses = False
             
             if mode == 'audio':
-                sukses = unduh_audio_saja(link, nama_file_kustom)
+                sukses = unduh_audio_saja(link, nama_file_kustom, path_output_audio)
                 if sukses: print(f"   -> Audio '{nama_file_kustom}.mp3' berhasil diunduh.")
             elif mode == 'video':
-                sukses = unduh_video_saja(link, nama_file_kustom)
+                sukses = unduh_video_saja(link, nama_file_kustom, path_output_video)
                 if sukses: print(f"   -> Video untuk '{nama_file_kustom}' berhasil diunduh.")
             elif mode == 'both':
                 print("   -> Mengunduh Video...")
-                sukses_v = unduh_video_saja(link, nama_file_kustom)
+                sukses_v = unduh_video_saja(link, nama_file_kustom, path_output_video)
                 if sukses_v: print(f"   -> Video untuk '{nama_file_kustom}' berhasil diunduh.")
                 
                 print("   -> Mengunduh Audio...")
-                sukses_a = unduh_audio_saja(link, nama_file_kustom)
+                sukses_a = unduh_audio_saja(link, nama_file_kustom, path_output_audio)
                 if sukses_a: print(f"   -> Audio '{nama_file_kustom}.mp3' berhasil diunduh.")
                 sukses = sukses_v or sukses_a
 
@@ -166,6 +174,7 @@ def proses_dari_json(file_json_path, mode='both'):
 
 # --- Program Utama ---
 if __name__ == "__main__":
+    buat_folder_jika_perlu(FOLDER_UTAMA)
     print("Pilih tindakan yang diinginkan:")
     print("1. Masukkan URL YouTube manual")
     print("2. Proses dari file JSON di folder 'data_musik/hasil'")
@@ -176,7 +185,9 @@ if __name__ == "__main__":
         else: print("Pilihan tidak valid.")
 
     if pilihan_utama == '1':
-        # Bagian ini tidak berubah
+        # <--- PERUBAHAN: Meminta nama folder di dalam opsi 1
+        folder_output_kustom, folder_audio_kustom = dapatkan_path_output()
+
         link_video = input("Masukkan URL YouTube: ").strip()
         if not link_video:
             print("URL tidak boleh kosong.")
@@ -202,19 +213,21 @@ if __name__ == "__main__":
             
             print("\n--- Memulai Unduhan Manual ---")
             if pilihan_format == 'a':
-                if unduh_audio_saja(link_video, nama_file_default): print("✅ Audio berhasil diunduh.")
+                if unduh_audio_saja(link_video, nama_file_default, folder_audio_kustom): print("✅ Audio berhasil diunduh.")
             elif pilihan_format == 'b':
-                if unduh_video_saja(link_video, nama_file_default): print("✅ Video berhasil diunduh.")
+                if unduh_video_saja(link_video, nama_file_default, folder_output_kustom): print("✅ Video berhasil diunduh.")
             elif pilihan_format == 'c':
-                unduh_video_saja(link_video, nama_file_default)
-                unduh_audio_saja(link_video, nama_file_default)
+                unduh_video_saja(link_video, nama_file_default, folder_output_kustom)
+                unduh_audio_saja(link_video, nama_file_default, folder_audio_kustom)
     
     elif pilihan_utama == '2':
-        # Memanggil fungsi untuk memilih file terlebih dahulu
+        # <--- PERUBAHAN: Memilih file dulu
         file_dipilih = pilih_file_json()
 
-        # Hanya melanjutkan jika file berhasil dipilih
         if file_dipilih:
+            # <--- PERUBAHAN: Baru meminta nama folder setelah file dipilih
+            folder_output_kustom, folder_audio_kustom = dapatkan_path_output()
+
             print("\nPilih format unduhan untuk SEMUA item di JSON:")
             print("a. Audio Saja (.mp3)")
             print("b. Video Saja (Format Asli)")
@@ -226,5 +239,4 @@ if __name__ == "__main__":
                 else: print("Pilihan tidak valid.")
 
             mode_map = {'a': 'audio', 'b': 'video', 'c': 'both'}
-            # Mengirim path file yang dipilih ke fungsi proses
-            proses_dari_json(file_dipilih, mode=mode_map[pilihan_json])
+            proses_dari_json(file_dipilih, folder_output_kustom, folder_audio_kustom, mode=mode_map[pilihan_json])
