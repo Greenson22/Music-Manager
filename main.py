@@ -4,6 +4,7 @@ import json
 import glob
 
 # --- KONFIGURASI ---
+# Ganti dengan path FFMPEG di komputer Anda
 FFMPEG_PATH = r'C:\ffmpeg-7.1.1-essentials_build\bin' 
 FOLDER_UTAMA = "musikku"
 FOLDER_JSON = os.path.join("data_musik", "hasil") 
@@ -14,12 +15,10 @@ def buat_folder_jika_perlu(path_folder):
         os.makedirs(path_folder)
         print(f"Folder '{path_folder}' telah dibuat.")
 
-# <--- PERUBAHAN: Fungsi baru untuk mengurangi duplikasi kode
 def dapatkan_path_output():
     """Meminta nama folder kustom dari pengguna dan mengembalikan path output."""
     nama_folder_kustom = input(f"\nMasukkan nama folder di dalam '{FOLDER_UTAMA}' untuk menyimpan hasil download: ").strip()
     if not nama_folder_kustom:
-        # Ambil nama file JSON sebagai default jika memungkinkan, jika tidak, gunakan default umum
         nama_folder_kustom = "hasil_unduhan"
         print(f"Nama folder tidak diisi, menggunakan nama default: '{nama_folder_kustom}'")
 
@@ -37,17 +36,29 @@ def progress_hook(d):
     if d['status'] == 'downloading':
         print(f"\r   -> Progress: {d['_percent_str']} | Ukuran: {d['_total_bytes_str']} | Kecepatan: {d['_speed_str']} | ETA: {d['_eta_str']}", end="")
     elif d['status'] == 'finished':
+        # Menambahkan baris baru setelah selesai download/konversi
         print() 
 
+# --- PERUBAHAN UTAMA DI FUNGSI INI ---
 def unduh_audio_saja(url, nama_file, path_output_audio):
-    """Hanya mengunduh dan konversi ke audio MP3 dengan nama file kustom."""
+    """Mengunduh dan konversi ke audio MP3 lengkap dengan thumbnail."""
     buat_folder_jika_perlu(path_output_audio)
     ydl_opts = {
         'format': 'bestaudio/best',
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio', 
+            'preferredcodec': 'mp3', 
+            'preferredquality': '192'
+        },{
+            # Postprocessor untuk menyematkan thumbnail
+            'key': 'EmbedThumbnail',
+            'already_have_thumbnail': False
+        }],
         'outtmpl': os.path.join(path_output_audio, f'{nama_file}.%(ext)s'),
         'ffmpeg_location': FFMPEG_PATH,
         'progress_hooks': [progress_hook],
+        'writethumbnail': True, # WAJIB: untuk memberitahu yt-dlp agar mengunduh thumbnail
+        'ignoreerrors': True, # Melanjutkan jika ada error pada satu video
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -65,6 +76,7 @@ def unduh_video_saja(url, nama_file, path_output_video):
         'outtmpl': os.path.join(path_output_video, f'{nama_file}.%(ext)s'),
         'ffmpeg_location': FFMPEG_PATH,
         'progress_hooks': [progress_hook],
+        'ignoreerrors': True,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -145,18 +157,18 @@ def proses_dari_json(file_json_path, path_output_video, path_output_audio, mode=
             
             if mode == 'audio':
                 sukses = unduh_audio_saja(link, nama_file_kustom, path_output_audio)
-                if sukses: print(f"   -> Audio '{nama_file_kustom}.mp3' berhasil diunduh.")
+                if sukses: print(f"   -> ✅ Audio '{nama_file_kustom}.mp3' berhasil diunduh dengan thumbnail.")
             elif mode == 'video':
                 sukses = unduh_video_saja(link, nama_file_kustom, path_output_video)
-                if sukses: print(f"   -> Video untuk '{nama_file_kustom}' berhasil diunduh.")
+                if sukses: print(f"   -> ✅ Video untuk '{nama_file_kustom}' berhasil diunduh.")
             elif mode == 'both':
                 print("   -> Mengunduh Video...")
                 sukses_v = unduh_video_saja(link, nama_file_kustom, path_output_video)
-                if sukses_v: print(f"   -> Video untuk '{nama_file_kustom}' berhasil diunduh.")
+                if sukses_v: print(f"   -> ✅ Video untuk '{nama_file_kustom}' berhasil diunduh.")
                 
                 print("   -> Mengunduh Audio...")
                 sukses_a = unduh_audio_saja(link, nama_file_kustom, path_output_audio)
-                if sukses_a: print(f"   -> Audio '{nama_file_kustom}.mp3' berhasil diunduh.")
+                if sukses_a: print(f"   -> ✅ Audio '{nama_file_kustom}.mp3' berhasil diunduh dengan thumbnail.")
                 sukses = sukses_v or sukses_a
 
             if sukses:
@@ -185,7 +197,6 @@ if __name__ == "__main__":
         else: print("Pilihan tidak valid.")
 
     if pilihan_utama == '1':
-        # <--- PERUBAHAN: Meminta nama folder di dalam opsi 1
         folder_output_kustom, folder_audio_kustom = dapatkan_path_output()
 
         link_video = input("Masukkan URL YouTube: ").strip()
@@ -202,7 +213,7 @@ if __name__ == "__main__":
                 nama_file_default = "video_unduhan"
 
             print("\nPilih format unduhan:")
-            print("a. Audio Saja (.mp3)")
+            print("a. Audio Saja (.mp3 dengan Thumbnail)")
             print("b. Video Saja (Format Asli)")
             print("c. Video dan Audio")
 
@@ -221,15 +232,13 @@ if __name__ == "__main__":
                 unduh_audio_saja(link_video, nama_file_default, folder_audio_kustom)
     
     elif pilihan_utama == '2':
-        # <--- PERUBAHAN: Memilih file dulu
         file_dipilih = pilih_file_json()
 
         if file_dipilih:
-            # <--- PERUBAHAN: Baru meminta nama folder setelah file dipilih
             folder_output_kustom, folder_audio_kustom = dapatkan_path_output()
 
             print("\nPilih format unduhan untuk SEMUA item di JSON:")
-            print("a. Audio Saja (.mp3)")
+            print("a. Audio Saja (.mp3 dengan Thumbnail)")
             print("b. Video Saja (Format Asli)")
             print("c. Video dan Audio (Lengkap)")
             
