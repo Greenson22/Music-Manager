@@ -2,7 +2,7 @@ import os
 import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
-    QTextEdit, QProgressBar, QFileDialog
+    QTextEdit, QProgressBar, QFileDialog, QCheckBox
 )
 from PyQt6.QtCore import Qt
 
@@ -38,6 +38,14 @@ class SearchTab(QWidget):
         output_layout.addWidget(QLabel("File Output:"))
         output_layout.addWidget(self.output_file_label)
 
+        # --- PERUBAHAN DI SINI: Menambahkan Checkbox Opsi ---
+        options_layout = QHBoxLayout()
+        self.get_size_checkbox = QCheckBox("Dapatkan Ukuran File (Proses Lebih Lambat)")
+        self.get_size_checkbox.setChecked(True) # Aktif secara default
+        options_layout.addWidget(self.get_size_checkbox)
+        options_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        # ---------------------------------------------------
+
         # Tombol Aksi
         action_layout = QHBoxLayout()
         self.start_search_btn = QPushButton("Mulai Pencarian")
@@ -58,6 +66,7 @@ class SearchTab(QWidget):
 
         layout.addLayout(input_layout)
         layout.addLayout(output_layout)
+        layout.addLayout(options_layout) # Menambahkan layout opsi ke UI
         layout.addLayout(action_layout)
         layout.addWidget(self.progress_bar)
         layout.addWidget(QLabel("Log Proses:"))
@@ -65,15 +74,12 @@ class SearchTab(QWidget):
 
     def browse_input_file(self):
         os.makedirs(FOLDER_MUSIK_UTAMA, exist_ok=True)
-        # --- PERUBAHAN DI SINI ---
-        # Menambahkan filter untuk file .txt
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             "Pilih File Input", 
             FOLDER_MUSIK_UTAMA, 
             "Supported Files (*.json *.txt);;JSON Files (*.json);;Text Files (*.txt)"
         )
-        # -------------------------
         
         if file_path:
             self.input_file_label.setText(file_path)
@@ -101,7 +107,10 @@ class SearchTab(QWidget):
         self.stop_search_btn.setEnabled(True)
         self.browse_input_btn.setEnabled(False)
 
-        self.search_worker = SearchWorker(input_file, output_file)
+        # --- PERUBAHAN DI SINI: Meneruskan status checkbox ke worker ---
+        get_size = self.get_size_checkbox.isChecked()
+        self.search_worker = SearchWorker(input_file, output_file, get_size)
+        # ------------------------------------------------------------
         self.search_worker.progress.connect(self.update_search_progress)
         self.search_worker.finished.connect(self.search_finished)
         self.search_worker.start()

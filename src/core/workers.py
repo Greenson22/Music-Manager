@@ -14,32 +14,29 @@ class SearchWorker(QThread):
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(str)
     
-    def __init__(self, input_file, output_file):
+    # --- PERUBAHAN DI SINI: Menambahkan parameter get_file_size ---
+    def __init__(self, input_file, output_file, get_file_size=True):
         super().__init__()
         self.input_file = input_file
         self.output_file = output_file
         self.is_running = True
+        self.get_file_size = get_file_size # Menyimpan mode pencarian
+    # ---------------------------------------------------------
 
     def run(self):
         daftar_judul_input = []
         try:
-            # --- PERUBAHAN DI SINI ---
-            # Mengecek ekstensi file dan membacanya sesuai format
             file_extension = os.path.splitext(self.input_file)[1].lower()
-
             if file_extension == '.json':
                 with open(self.input_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     daftar_judul_input = data.get('judul_lagu', [])
             elif file_extension == '.txt':
                 with open(self.input_file, 'r', encoding='utf-8') as f:
-                    # Membaca setiap baris, menghapus spasi kosong di awal/akhir
                     daftar_judul_input = [line.strip() for line in f if line.strip()]
             else:
                 self.finished.emit(f"Format file tidak didukung: {file_extension}")
                 return
-            # --------------------------
-
             if not daftar_judul_input:
                 self.finished.emit("File input kosong atau formatnya tidak sesuai.")
                 return
@@ -79,16 +76,43 @@ class SearchWorker(QThread):
             if video:
                 judul_hasil = video.title
                 link_hasil = video.watch_url
-                self.progress.emit(int((i + 1) / total_judul * 100), f"   -> Ditemukan: '{judul_hasil}'")
+                
+                ukuran_file_str = "N/A"
+                log_pesan = f"   -> Ditemukan: '{judul_hasil}'"
+
+                # --- PERUBAHAN DI SINI: Logika kondisional untuk mendapatkan ukuran file ---
+                if self.get_file_size:
+                    try:
+                        ydl_opts = {'quiet': True, 'no_warnings': True}
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info_dict = ydl.extract_info(link_hasil, download=False)
+                            best_format = next((f for f in reversed(info_dict.get('formats', [])) 
+                                                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('filesize')), None)
+                            if not best_format:
+                                best_format = next((f for f in reversed(info_dict.get('formats', [])) 
+                                                    if f.get('acodec') != 'none' and f.get('filesize')), None)
+                            if best_format and best_format.get('filesize'):
+                                filesize = best_format['filesize']
+                                ukuran_file_str = f"{filesize / (1024*1024):.2f} MB"
+                            else:
+                                ukuran_file_str = "Tidak diketahui"
+                    except Exception:
+                        ukuran_file_str = "Error"
+                    log_pesan += f" ({ukuran_file_str})"
+                # -------------------------------------------------------------------------
+                
+                self.progress.emit(int((i + 1) / total_judul * 100), log_pesan)
             else:
                 judul_hasil = "Tidak Ditemukan"
                 link_hasil = "Tidak Ditemukan"
+                ukuran_file_str = "N/A"
                 self.progress.emit(int((i + 1) / total_judul * 100), f"   -> Gagal menemukan video.")
 
             hasil_akhir.append({
                 "judul_asli": judul_asli,
                 "judul_video": judul_hasil,
                 "link_youtube": link_hasil,
+                "ukuran_file": ukuran_file_str,
                 "download": False
             })
 
@@ -107,7 +131,7 @@ class SearchWorker(QThread):
         self.is_running = False
 
 class DownloadWorker(QThread):
-    # ... (Isi kelas DownloadWorker tetap sama, tidak perlu diubah) ...
+    # ... (Isi kelas DownloadWorker tetap sama) ...
     progress = pyqtSignal(int, str)
     item_finished = pyqtSignal(int, bool)
     finished = pyqtSignal(str)
@@ -224,7 +248,7 @@ class DownloadWorker(QThread):
         self.is_running = False
 
 class ThumbnailWorker(QThread):
-    # ... (Isi kelas ThumbnailWorker tetap sama, tidak perlu diubah) ...
+    # ... (Isi kelas ThumbnailWorker tetap sama) ...
     finished = pyqtSignal(str, QPixmap)
 
     def __init__(self, url):

@@ -29,22 +29,25 @@ class DownloadTab(QWidget):
         left_layout = QVBoxLayout()
         
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["", "Judul Asli", "Judul Video YouTube", "Status", "URL"])
+        # --- PERUBAHAN DI SINI: Menambah kolom dan header baru ---
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["", "Judul Asli", "Judul Video YouTube", "Ukuran", "Status", "URL"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.setColumnHidden(4, True)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setColumnHidden(5, True) # URL sekarang di kolom ke-5 (indeks 5)
+        # --------------------------------------------------------
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setWordWrap(True) # Mengaktifkan word wrap
+        self.table.setWordWrap(True)
 
         self.progress_bar = QProgressBar()
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setFixedHeight(150) # Memberi tinggi tetap untuk log box
+        self.log_box.setFixedHeight(150)
 
-        left_layout.addWidget(self.table, 1) # Tabel mengambil sisa ruang
+        left_layout.addWidget(self.table, 1)
         left_layout.addWidget(self.progress_bar)
         left_layout.addWidget(QLabel("Log Proses:"))
         left_layout.addWidget(self.log_box)
@@ -54,7 +57,7 @@ class DownloadTab(QWidget):
         right_layout.setSpacing(20)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Grup 1: Pilih Sumber ---
+        # Grup-grup kontrol tetap sama
         source_group = QGroupBox("① Pilih Sumber")
         source_group_layout = QVBoxLayout(source_group)
         self.json_file_label = QLineEdit("Pilih file JSON...")
@@ -64,7 +67,6 @@ class DownloadTab(QWidget):
         source_group_layout.addWidget(self.json_file_label)
         source_group_layout.addWidget(self.browse_json_btn)
         
-        # --- Grup 2: Opsi Unduhan ---
         options_group = QGroupBox("② Opsi Unduhan")
         options_group_layout = QVBoxLayout(options_group)
         self.mode_group = QButtonGroup()
@@ -75,11 +77,9 @@ class DownloadTab(QWidget):
         self.mode_group.addButton(self.radio_audio)
         self.mode_group.addButton(self.radio_video)
         self.mode_group.addButton(self.radio_both)
-        
         self.output_path_label = QLineEdit(os.path.abspath(FOLDER_DOWNLOAD_UTAMA))
         self.browse_output_btn = QPushButton("Pilih Folder Output")
         self.browse_output_btn.clicked.connect(self.browse_output_folder)
-        
         options_group_layout.addWidget(self.radio_audio)
         options_group_layout.addWidget(self.radio_video)
         options_group_layout.addWidget(self.radio_both)
@@ -88,7 +88,6 @@ class DownloadTab(QWidget):
         options_group_layout.addWidget(self.output_path_label)
         options_group_layout.addWidget(self.browse_output_btn)
 
-        # --- Grup 3: Aksi ---
         action_group = QGroupBox("③ Aksi")
         action_group_layout = QVBoxLayout(action_group)
         self.start_download_btn = QPushButton("Mulai Unduh Terpilih")
@@ -103,18 +102,17 @@ class DownloadTab(QWidget):
         right_layout.addWidget(source_group)
         right_layout.addWidget(options_group)
         right_layout.addWidget(action_group)
-        right_layout.addStretch() # Mendorong semua grup ke atas
+        right_layout.addStretch()
 
-        # Menambahkan kedua kolom ke layout utama
-        main_layout.addLayout(left_layout, 7)  # Kolom kiri mengambil 70% ruang
-        main_layout.addLayout(right_layout, 3) # Kolom kanan mengambil 30% ruang
+        main_layout.addLayout(left_layout, 7)
+        main_layout.addLayout(right_layout, 3)
 
     def browse_json_file(self):
         os.makedirs(FOLDER_HASIL_JSON, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File JSON", FOLDER_HASIL_JSON, "JSON Files (*.json)")
         if file_path:
             self.current_json_path = file_path
-            self.json_file_label.setText(os.path.basename(file_path)) # Tampilkan nama file saja
+            self.json_file_label.setText(os.path.basename(file_path))
             self.load_json_to_table(file_path)
     
     def load_json_to_table(self, file_path):
@@ -131,13 +129,16 @@ class DownloadTab(QWidget):
                 
                 status = "Sudah diunduh" if item.get("download") else "Belum diunduh"
                 
+                # --- PERUBAHAN DI SINI: Mengisi data ke kolom yang benar ---
                 self.table.setItem(row, 0, chk_box_item)
                 self.table.setItem(row, 1, QTableWidgetItem(item.get("judul_asli", "")))
                 self.table.setItem(row, 2, QTableWidgetItem(item.get("judul_video", "")))
-                self.table.setItem(row, 3, QTableWidgetItem(status))
-                self.table.setItem(row, 4, QTableWidgetItem(item.get("link_youtube", "")))
+                self.table.setItem(row, 3, QTableWidgetItem(item.get("ukuran_file", "N/A"))) # Kolom ukuran
+                self.table.setItem(row, 4, QTableWidgetItem(status)) # Kolom status
+                self.table.setItem(row, 5, QTableWidgetItem(item.get("link_youtube", ""))) # Kolom URL
+                # -----------------------------------------------------------
             
-            self.table.resizeRowsToContents() # Sesuaikan tinggi baris
+            self.table.resizeRowsToContents()
             self.start_download_btn.setEnabled(True)
 
         except Exception as e:
@@ -153,7 +154,9 @@ class DownloadTab(QWidget):
         items_to_download = []
         for i in range(self.table.rowCount()):
             if self.table.item(i, 0).checkState() == Qt.CheckState.Checked:
-                link = self.table.item(i, 4).text()
+                # --- PERUBAHAN DI SINI: Mengambil link dari kolom yang benar (indeks 5) ---
+                link = self.table.item(i, 5).text()
+                # --------------------------------------------------------------------------
                 filename = self.table.item(i, 2).text()
                 judul_asli = self.table.item(i, 1).text()
                 filename = re.sub(r'[\\/*?:"<>|]', "", filename)
@@ -192,8 +195,10 @@ class DownloadTab(QWidget):
         self.log_box.append(message)
     
     def item_download_finished(self, row_index, success):
+        # --- PERUBAHAN DI SINI: Memperbarui status di kolom yang benar (indeks 4) ---
         status = "✅ Berhasil" if success else "❌ Gagal"
-        self.table.setItem(row_index, 3, QTableWidgetItem(status))
+        self.table.setItem(row_index, 4, QTableWidgetItem(status))
+        # -------------------------------------------------------------------------
         self.table.item(row_index, 0).setCheckState(Qt.CheckState.Unchecked)
 
     def download_finished(self, message):
