@@ -3,7 +3,8 @@ import json
 import re
 import requests
 import yt_dlp
-# Pytube tidak lagi digunakan di SearchWorker
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 from pytube import Search 
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
@@ -33,15 +34,9 @@ class SearchWorker(QThread):
     def run(self):
         worker_results = []
         
-        # --- PERBAIKAN UTAMA DI SINI ---
-        # Tentukan opsi yt_dlp berdasarkan mode yang dipilih
         ydl_opts = {'quiet': True, 'no_warnings': True}
         if not self.get_file_size:
-            # Mode Cepat: Hanya ambil info dasar, jangan ambil detail format
             ydl_opts['extract_flat'] = 'in_playlist'
-        # Jika mode lambat (get_file_size is True), kita tidak set 'extract_flat',
-        # sehingga yt_dlp akan otomatis mengambil semua detail.
-        # -------------------------------
 
         for title in self.titles_to_search:
             if not self.is_running:
@@ -51,7 +46,6 @@ class SearchWorker(QThread):
             
             video_info = None
             try:
-                # Cukup satu panggilan yt_dlp
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(f"ytsearch1:{title}", download=False)
                 
@@ -67,7 +61,6 @@ class SearchWorker(QThread):
                 ukuran_file_str = "N/A"
                 log_pesan = f"   -> [Pekerja #{self.worker_id}] Ditemukan: '{judul_hasil}'"
 
-                # Logika untuk mendapatkan ukuran file sekarang langsung dari video_info
                 if self.get_file_size:
                     try:
                         best_format = next((f for f in reversed(video_info.get('formats', [])) 
@@ -110,7 +103,6 @@ class SearchWorker(QThread):
     def stop(self):
         self.is_running = False
 
-# --- Kelas SearchManager, DownloadWorker, dan ThumbnailWorker tetap sama ---
 class SearchManager(QThread):
     progress = pyqtSignal(int, str)
     log_message = pyqtSignal(str)
@@ -219,7 +211,6 @@ class SearchManager(QThread):
             worker.stop()
 
 class DownloadWorker(QThread):
-    # ... (Isi kelas DownloadWorker tetap sama) ...
     progress = pyqtSignal(int, str)
     item_finished = pyqtSignal(int, bool)
     finished = pyqtSignal(str)
@@ -379,3 +370,43 @@ class ThumbnailWorker(QThread):
             pass
         
         self.finished.emit(video_title, pixmap)
+
+class SpotifySearchWorker(QThread):
+    """
+    Worker untuk mengambil daftar lagu dari playlist Spotify.
+    """
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, client_id, client_secret, playlist_url):
+        super().__init__()
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.playlist_url = playlist_url
+
+    def run(self):
+        try:
+            auth_manager = SpotifyClientCredentials(client_id=self.client_id, client_secret=self.client_secret)
+            sp = spotipy.Spotify(auth_manager=auth_manager)
+
+            results = sp.playlist_tracks(self.playlist_url)
+            tracks_raw = results['items']
+            
+            while results['next']:
+                results = sp.next(results)
+                tracks_raw.extend(results['items'])
+
+            track_list = []
+            for item in tracks_raw:
+                track = item.get('track')
+                if track and track.get('artists'):
+                    track_list.append({
+                        'name': track['name'],
+                        'artist': track['artists'][0]['name'],
+                        'album': track['album']['name']
+                    })
+            
+            self.finished.emit(track_list)
+
+        except Exception as e:
+            self.error.emit(str(e))

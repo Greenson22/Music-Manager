@@ -2,3 +2,4 @@ pytube==7.0.16
 yt-dlp
 pyqt6
 requests
+spotipy

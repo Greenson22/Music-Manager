@@ -4,3 +4,5 @@ musikku
 __pycache__
 .env
 /tes
+config.json
+.cache

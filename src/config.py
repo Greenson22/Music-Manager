@@ -1,4 +1,5 @@
 import os
+import json
 
 # --- KONFIGURASI AWAL ---
 # Ganti dengan path FFMPEG di komputer Anda. Diperlukan untuk konversi audio.
@@ -6,6 +7,36 @@ FFMPEG_PATH = None # <--- BIARKAN KOSONG AGAR MENCARI OTOMATIS
 FOLDER_MUSIK_UTAMA = "data_musik"
 FOLDER_HASIL_JSON = os.path.join(FOLDER_MUSIK_UTAMA, "hasil")
 FOLDER_DOWNLOAD_UTAMA = "musikku"
+CONFIG_FILE = "config.json"
+
+# --- FUNGSI UNTUK KREDENSIAL SPOTIFY ---
+def save_spotify_credentials(client_id, client_secret):
+    """Menyimpan kredensial Spotify ke file config."""
+    config = load_config()
+    config['spotify'] = {
+        'client_id': client_id,
+        'client_secret': client_secret
+    }
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
+    except Exception:
+        pass
+
+def load_spotify_credentials():
+    """Memuat kredensial Spotify dari file config."""
+    config = load_config()
+    return config.get('spotify', {})
+
+def load_config():
+    """Fungsi helper untuk memuat seluruh file config."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except (IOError, json.JSONDecodeError):
+            return {}
+    return {}
 
 # --- Style Sheet (QSS) untuk TEMA TERANG ---
 STYLESHEET_LIGHT = """
