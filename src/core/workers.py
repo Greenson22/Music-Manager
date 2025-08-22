@@ -3,29 +3,135 @@ import json
 import re
 import requests
 import yt_dlp
-from pytube import Search
+# Pytube tidak lagi digunakan di SearchWorker
+from pytube import Search 
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 
 # Import konfigurasi dari file terpisah
 from config import FFMPEG_PATH, FOLDER_HASIL_JSON
 
+# Mutex untuk memastikan penulisan file aman dari beberapa thread sekaligus
+file_mutex = QMutex()
+
 class SearchWorker(QThread):
+    """
+    Worker yang diperbaiki untuk menggunakan metode yt_dlp yang benar
+    berdasarkan mode pencarian (cepat vs. detail/lambat).
+    """
+    task_finished = pyqtSignal(int, list)
+    log_message = pyqtSignal(int, str)
+    progress_update = pyqtSignal(int)
+
+    def __init__(self, worker_id, titles_to_search, get_file_size):
+        super().__init__()
+        self.worker_id = worker_id
+        self.titles_to_search = titles_to_search
+        self.get_file_size = get_file_size
+        self.is_running = True
+
+    def run(self):
+        worker_results = []
+        
+        # --- PERBAIKAN UTAMA DI SINI ---
+        # Tentukan opsi yt_dlp berdasarkan mode yang dipilih
+        ydl_opts = {'quiet': True, 'no_warnings': True}
+        if not self.get_file_size:
+            # Mode Cepat: Hanya ambil info dasar, jangan ambil detail format
+            ydl_opts['extract_flat'] = 'in_playlist'
+        # Jika mode lambat (get_file_size is True), kita tidak set 'extract_flat',
+        # sehingga yt_dlp akan otomatis mengambil semua detail.
+        # -------------------------------
+
+        for title in self.titles_to_search:
+            if not self.is_running:
+                break
+
+            self.log_message.emit(self.worker_id, f"[Pekerja #{self.worker_id}] Mencari: {title}...")
+            
+            video_info = None
+            try:
+                # Cukup satu panggilan yt_dlp
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f"ytsearch1:{title}", download=False)
+                
+                if info and 'entries' in info and info['entries']:
+                    video_info = info['entries'][0]
+
+            except Exception as e:
+                self.log_message.emit(self.worker_id, f"   -> [Pekerja #{self.worker_id}] Error saat mencari: {e}")
+
+            if video_info:
+                judul_hasil = video_info.get('title', 'Judul tidak ditemukan')
+                link_hasil = video_info.get('webpage_url', 'Link tidak ditemukan')
+                ukuran_file_str = "N/A"
+                log_pesan = f"   -> [Pekerja #{self.worker_id}] Ditemukan: '{judul_hasil}'"
+
+                # Logika untuk mendapatkan ukuran file sekarang langsung dari video_info
+                if self.get_file_size:
+                    try:
+                        best_format = next((f for f in reversed(video_info.get('formats', [])) 
+                                            if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('filesize')), None)
+                        if not best_format:
+                            best_format = next((f for f in reversed(video_info.get('formats', [])) 
+                                                if f.get('acodec') != 'none' and f.get('filesize')), None)
+                        
+                        if best_format and best_format.get('filesize'):
+                            filesize = best_format['filesize']
+                            ukuran_file_str = f"{filesize / (1024*1024):.2f} MB"
+                        else:
+                            filesize_approx = video_info.get('filesize_approx')
+                            if filesize_approx:
+                                ukuran_file_str = f"~{filesize_approx / (1024*1024):.2f} MB"
+                            else:
+                                ukuran_file_str = "Tidak diketahui"
+                    except Exception:
+                        ukuran_file_str = "Error"
+                    log_pesan += f" ({ukuran_file_str})"
+                
+                self.log_message.emit(self.worker_id, log_pesan)
+            else:
+                judul_hasil = "Tidak Ditemukan"
+                link_hasil = "Link tidak ditemukan"
+                ukuran_file_str = "N/A"
+                self.log_message.emit(self.worker_id, f"   -> [Pekerja #{self.worker_id}] Gagal menemukan video.")
+
+            worker_results.append({
+                "judul_asli": title,
+                "judul_video": judul_hasil,
+                "link_youtube": link_hasil,
+                "ukuran_file": ukuran_file_str,
+                "download": False
+            })
+            self.progress_update.emit(1)
+
+        self.task_finished.emit(self.worker_id, worker_results)
+
+    def stop(self):
+        self.is_running = False
+
+# --- Kelas SearchManager, DownloadWorker, dan ThumbnailWorker tetap sama ---
+class SearchManager(QThread):
     progress = pyqtSignal(int, str)
+    log_message = pyqtSignal(str)
     finished = pyqtSignal(str)
-    
-    # --- PERUBAHAN DI SINI: Menambahkan parameter get_file_size ---
-    def __init__(self, input_file, output_file, get_file_size=True):
+
+    def __init__(self, input_file, output_file, get_file_size, num_workers):
         super().__init__()
         self.input_file = input_file
         self.output_file = output_file
+        self.get_file_size = get_file_size
+        self.num_workers = num_workers
+        self.workers = []
         self.is_running = True
-        self.get_file_size = get_file_size # Menyimpan mode pencarian
-    # ---------------------------------------------------------
+        self.total_processed = 0
+        self.total_titles = 0
+        self.all_results = []
+        self.workers_finished_count = 0
 
     def run(self):
-        daftar_judul_input = []
         try:
+            daftar_judul_input = []
             file_extension = os.path.splitext(self.input_file)[1].lower()
             if file_extension == '.json':
                 with open(self.input_file, 'r', encoding='utf-8') as f:
@@ -40,95 +146,77 @@ class SearchWorker(QThread):
             if not daftar_judul_input:
                 self.finished.emit("File input kosong atau formatnya tidak sesuai.")
                 return
+
+            try:
+                if os.path.exists(self.output_file):
+                    with open(self.output_file, 'r', encoding='utf-8') as f:
+                        self.all_results = json.load(f)
+                    judul_asli_sudah_diproses = {item.get('judul_asli') for item in self.all_results}
+                    
+                    original_count = len(daftar_judul_input)
+                    titles_to_process = [title for title in daftar_judul_input if title not in judul_asli_sudah_diproses]
+                    
+                    self.log_message.emit(f"Melanjutkan proses. {len(judul_asli_sudah_diproses)} dari {original_count} lagu sudah ada.")
+                else:
+                    titles_to_process = daftar_judul_input
+                    self.log_message.emit("Memulai proses pencarian baru...")
+            except (FileNotFoundError, json.JSONDecodeError):
+                titles_to_process = daftar_judul_input
+                self.log_message.emit("Memulai proses pencarian baru...")
+
+            self.total_titles = len(titles_to_process)
+            if self.total_titles == 0:
+                self.finished.emit("Tidak ada lagu baru untuk dicari.")
+                return
         except Exception as e:
             self.finished.emit(f"Error saat membaca file input: {e}")
             return
 
-        hasil_akhir = []
-        judul_asli_sudah_diproses = set()
-        try:
-            if os.path.exists(self.output_file):
-                with open(self.output_file, 'r', encoding='utf-8') as f:
-                    hasil_akhir = json.load(f)
-                    judul_asli_sudah_diproses = {item.get('judul_asli') for item in hasil_akhir}
-                self.progress.emit(0, f"Melanjutkan proses. {len(judul_asli_sudah_diproses)} lagu sudah ada.")
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.progress.emit(0, "Memulai proses pencarian baru...")
+        chunk_size = (self.total_titles + self.num_workers - 1) // self.num_workers
+        chunks = [titles_to_process[i:i + chunk_size] for i in range(0, self.total_titles, chunk_size)]
+
+        for i, chunk in enumerate(chunks):
+            if not self.is_running: break
+            worker = SearchWorker(i + 1, chunk, self.get_file_size)
+            worker.log_message.connect(self.handle_worker_log)
+            worker.progress_update.connect(self.handle_worker_progress)
+            worker.task_finished.connect(self.handle_worker_finished)
+            self.workers.append(worker)
+            worker.start()
+
+        for worker in self.workers:
+            worker.wait()
+
+    def handle_worker_log(self, worker_id, message):
+        self.log_message.emit(message)
+
+    def handle_worker_progress(self, num_processed):
+        self.total_processed += num_processed
+        percentage = int(self.total_processed / self.total_titles * 100) if self.total_titles > 0 else 0
+        self.progress.emit(percentage, "")
+
+    def handle_worker_finished(self, worker_id, results):
+        self.all_results.extend(results)
+        self.workers_finished_count += 1
         
-        total_judul = len(daftar_judul_input)
-        for i, judul_asli in enumerate(daftar_judul_input):
-            if not self.is_running:
-                break
-            
-            if judul_asli in judul_asli_sudah_diproses:
-                self.progress.emit(int((i + 1) / total_judul * 100), f"Dilewati (sudah ada): {judul_asli}")
-                continue
-
-            self.progress.emit(int((i + 1) / total_judul * 100), f"Mencari: {judul_asli}...")
-            
-            try:
-                s = Search(judul_asli)
-                video = s.results[0] if s.results else None
-            except Exception as e:
-                video = None
-                self.progress.emit(int((i + 1) / total_judul * 100), f"   -> Error saat mencari: {e}")
-
-            if video:
-                judul_hasil = video.title
-                link_hasil = video.watch_url
-                
-                ukuran_file_str = "N/A"
-                log_pesan = f"   -> Ditemukan: '{judul_hasil}'"
-
-                # --- PERUBAHAN DI SINI: Logika kondisional untuk mendapatkan ukuran file ---
-                if self.get_file_size:
-                    try:
-                        ydl_opts = {'quiet': True, 'no_warnings': True}
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info_dict = ydl.extract_info(link_hasil, download=False)
-                            best_format = next((f for f in reversed(info_dict.get('formats', [])) 
-                                                if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('filesize')), None)
-                            if not best_format:
-                                best_format = next((f for f in reversed(info_dict.get('formats', [])) 
-                                                    if f.get('acodec') != 'none' and f.get('filesize')), None)
-                            if best_format and best_format.get('filesize'):
-                                filesize = best_format['filesize']
-                                ukuran_file_str = f"{filesize / (1024*1024):.2f} MB"
-                            else:
-                                ukuran_file_str = "Tidak diketahui"
-                    except Exception:
-                        ukuran_file_str = "Error"
-                    log_pesan += f" ({ukuran_file_str})"
-                # -------------------------------------------------------------------------
-                
-                self.progress.emit(int((i + 1) / total_judul * 100), log_pesan)
-            else:
-                judul_hasil = "Tidak Ditemukan"
-                link_hasil = "Tidak Ditemukan"
-                ukuran_file_str = "N/A"
-                self.progress.emit(int((i + 1) / total_judul * 100), f"   -> Gagal menemukan video.")
-
-            hasil_akhir.append({
-                "judul_asli": judul_asli,
-                "judul_video": judul_hasil,
-                "link_youtube": link_hasil,
-                "ukuran_file": ukuran_file_str,
-                "download": False
-            })
-
+        with QMutexLocker(file_mutex):
             try:
                 with open(self.output_file, 'w', encoding='utf-8') as f:
-                    json.dump(hasil_akhir, f, indent=4, ensure_ascii=False)
+                    json.dump(self.all_results, f, indent=4, ensure_ascii=False)
             except Exception as e:
-                 self.progress.emit(int((i + 1) / total_judul * 100), f"   -> Gagal menyimpan file: {e}")
+                 self.log_message.emit(f"   -> Gagal menyimpan file sementara: {e}")
 
-        if self.is_running:
-            self.finished.emit(f"Proses pencarian selesai. Hasil disimpan di:\n{self.output_file}")
-        else:
-            self.finished.emit("Proses pencarian dihentikan oleh pengguna.")
+        if self.workers_finished_count == len(self.workers):
+            if self.is_running:
+                self.finished.emit(f"Proses pencarian selesai. Hasil disimpan di:\n{self.output_file}")
+            else:
+                self.finished.emit("Proses pencarian dihentikan oleh pengguna.")
 
     def stop(self):
         self.is_running = False
+        self.log_message.emit("Menghentikan semua pekerja...")
+        for worker in self.workers:
+            worker.stop()
 
 class DownloadWorker(QThread):
     # ... (Isi kelas DownloadWorker tetap sama) ...
@@ -248,7 +336,6 @@ class DownloadWorker(QThread):
         self.is_running = False
 
 class ThumbnailWorker(QThread):
-    # ... (Isi kelas ThumbnailWorker tetap sama) ...
     finished = pyqtSignal(str, QPixmap)
 
     def __init__(self, url):

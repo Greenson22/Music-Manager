@@ -2,19 +2,19 @@ import os
 import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
-    QTextEdit, QProgressBar, QFileDialog, QCheckBox
+    QTextEdit, QProgressBar, QFileDialog, QCheckBox, QSpinBox
 )
 from PyQt6.QtCore import Qt
 
 # Import worker dan konfigurasi
-from core.workers import SearchWorker
+from core.workers import SearchManager # Diubah dari SearchWorker ke SearchManager
 from config import FOLDER_MUSIK_UTAMA, FOLDER_HASIL_JSON
 
 class SearchTab(QWidget):
     def __init__(self):
         super().__init__()
         self.init_ui()
-        self.search_worker = None
+        self.search_manager = None # Diubah dari search_worker
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -38,13 +38,24 @@ class SearchTab(QWidget):
         output_layout.addWidget(QLabel("File Output:"))
         output_layout.addWidget(self.output_file_label)
 
-        # --- PERUBAHAN DI SINI: Menambahkan Checkbox Opsi ---
+        # Opsi
         options_layout = QHBoxLayout()
         self.get_size_checkbox = QCheckBox("Dapatkan Ukuran File (Proses Lebih Lambat)")
-        self.get_size_checkbox.setChecked(True) # Aktif secara default
+        self.get_size_checkbox.setChecked(True)
+        
+        # --- PERUBAHAN DI SINI: Menambahkan Pilihan Jumlah Worker ---
+        self.worker_label = QLabel("Jumlah Pencarian Simultan:")
+        self.worker_spinbox = QSpinBox()
+        self.worker_spinbox.setMinimum(1)
+        self.worker_spinbox.setMaximum(10) # Batas wajar
+        self.worker_spinbox.setValue(3)    # Nilai default
+        self.worker_spinbox.setFixedWidth(50)
+
         options_layout.addWidget(self.get_size_checkbox)
-        options_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        # ---------------------------------------------------
+        options_layout.addStretch()
+        options_layout.addWidget(self.worker_label)
+        options_layout.addWidget(self.worker_spinbox)
+        # -----------------------------------------------------------
 
         # Tombol Aksi
         action_layout = QHBoxLayout()
@@ -57,16 +68,13 @@ class SearchTab(QWidget):
         action_layout.addWidget(self.start_search_btn)
         action_layout.addWidget(self.stop_search_btn)
 
-        # Progress Bar
         self.progress_bar = QProgressBar()
-
-        # Log
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
 
         layout.addLayout(input_layout)
         layout.addLayout(output_layout)
-        layout.addLayout(options_layout) # Menambahkan layout opsi ke UI
+        layout.addLayout(options_layout)
         layout.addLayout(action_layout)
         layout.addWidget(self.progress_bar)
         layout.addWidget(QLabel("Log Proses:"))
@@ -80,17 +88,14 @@ class SearchTab(QWidget):
             FOLDER_MUSIK_UTAMA, 
             "Supported Files (*.json *.txt);;JSON Files (*.json);;Text Files (*.txt)"
         )
-        
         if file_path:
             self.input_file_label.setText(file_path)
-            
             os.makedirs(FOLDER_HASIL_JSON, exist_ok=True)
             base_name = os.path.basename(file_path)
             name, ext = os.path.splitext(base_name)
             output_name = f"{name}_hasil_pencarian.json"
             output_path = os.path.join(FOLDER_HASIL_JSON, output_name)
             self.output_file_label.setText(output_path)
-            
             self.start_search_btn.setEnabled(True)
 
     def start_search(self):
@@ -107,22 +112,26 @@ class SearchTab(QWidget):
         self.stop_search_btn.setEnabled(True)
         self.browse_input_btn.setEnabled(False)
 
-        # --- PERUBAHAN DI SINI: Meneruskan status checkbox ke worker ---
+        # --- PERUBAHAN DI SINI: Menggunakan SearchManager ---
         get_size = self.get_size_checkbox.isChecked()
-        self.search_worker = SearchWorker(input_file, output_file, get_size)
-        # ------------------------------------------------------------
-        self.search_worker.progress.connect(self.update_search_progress)
-        self.search_worker.finished.connect(self.search_finished)
-        self.search_worker.start()
+        num_workers = self.worker_spinbox.value()
+        
+        self.search_manager = SearchManager(input_file, output_file, get_size, num_workers)
+        self.search_manager.progress.connect(self.update_search_progress)
+        self.search_manager.log_message.connect(self.log_box.append)
+        self.search_manager.finished.connect(self.search_finished)
+        self.search_manager.start()
+        # ----------------------------------------------------
 
     def stop_search(self):
-        if self.search_worker:
-            self.search_worker.stop()
+        if self.search_manager:
+            self.search_manager.stop()
             self.stop_search_btn.setEnabled(False)
 
     def update_search_progress(self, value, message):
         self.progress_bar.setValue(value)
-        self.log_box.append(message)
+        if message: # Pesan log sekarang datang dari sinyal terpisah
+            self.log_box.append(message)
     
     def search_finished(self, message):
         self.log_box.append(f"\n✅ {message}")
@@ -130,4 +139,4 @@ class SearchTab(QWidget):
         self.stop_search_btn.setEnabled(False)
         self.browse_input_btn.setEnabled(True)
         self.progress_bar.setValue(100)
-        self.search_worker = None
+        self.search_manager = None
