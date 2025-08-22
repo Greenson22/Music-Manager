@@ -2,41 +2,70 @@ import os
 import json
 
 # --- KONFIGURASI AWAL ---
-# Ganti dengan path FFMPEG di komputer Anda. Diperlukan untuk konversi audio.
-FFMPEG_PATH = None # <--- BIARKAN KOSONG AGAR MENCARI OTOMATIS
+FFMPEG_PATH = None
 FOLDER_MUSIK_UTAMA = "data_musik"
 FOLDER_HASIL_JSON = os.path.join(FOLDER_MUSIK_UTAMA, "hasil")
 FOLDER_DOWNLOAD_UTAMA = "musikku"
 CONFIG_FILE = "config.json"
 
-# --- FUNGSI UNTUK KREDENSIAL SPOTIFY ---
+# --- FUNGSI MANAJEMEN KONFIGURASI (UMUM) ---
+
+def load_config():
+    """Memuat seluruh file konfigurasi (config.json)."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except (IOError, json.JSONDecodeError):
+            return {}  # Kembalikan dict kosong jika file rusak atau error
+    return {}
+
+def save_config(config_data):
+    """Menyimpan seluruh dictionary konfigurasi ke config.json."""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config_data, f, indent=4)
+        return True
+    except Exception:
+        return False
+
+# --- FUNGSI SPESIFIK UNTUK PENGATURAN ---
+
 def save_spotify_credentials(client_id, client_secret):
     """Menyimpan kredensial Spotify ke file config."""
     config = load_config()
-    config['spotify'] = {
-        'client_id': client_id,
-        'client_secret': client_secret
-    }
-    try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(config, f, indent=4)
-    except Exception:
-        pass
+    if 'spotify' not in config:
+        config['spotify'] = {}
+    config['spotify']['client_id'] = client_id
+    config['spotify']['client_secret'] = client_secret
+    save_config(config)
 
 def load_spotify_credentials():
     """Memuat kredensial Spotify dari file config."""
     config = load_config()
     return config.get('spotify', {})
 
-def load_config():
-    """Fungsi helper untuk memuat seluruh file config."""
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                return json.load(f)
-        except (IOError, json.JSONDecodeError):
-            return {}
-    return {}
+def save_ui_settings(theme, scale):
+    """Menyimpan pengaturan UI (tema dan skala)."""
+    config = load_config()
+    if 'ui' not in config:
+        config['ui'] = {}
+    config['ui']['theme'] = theme
+    config['ui']['scale'] = scale
+    save_config(config)
+
+def load_ui_settings():
+    """Memuat pengaturan UI dengan nilai default jika tidak ada."""
+    config = load_config()
+    default_settings = {'theme': 'light', 'scale': 100}
+    ui_settings = config.get('ui', default_settings)
+    # Pastikan semua kunci ada, jika tidak, gunakan default
+    if 'theme' not in ui_settings:
+        ui_settings['theme'] = default_settings['theme']
+    if 'scale' not in ui_settings:
+        ui_settings['scale'] = default_settings['scale']
+    return ui_settings
+
 
 # --- Style Sheet (QSS) untuk TEMA TERANG ---
 STYLESHEET_LIGHT = """
@@ -44,7 +73,6 @@ QWidget {
     background-color: #F0F0F0;
     color: #000000;
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 11pt;
 }
 QTabWidget::pane {
     border-top: 2px solid #0078D7;
@@ -124,7 +152,6 @@ QWidget {
     background-color: #2E2E2E;
     color: #F0F0F0;
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 11pt;
 }
 QTabWidget::pane {
     border-top: 2px solid #5E5DF0;
