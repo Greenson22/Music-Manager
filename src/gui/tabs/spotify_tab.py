@@ -21,7 +21,7 @@ class SpotifyTab(QWidget):
         self.load_credentials()
 
     def init_ui(self):
-        main_layout = QHBoxLayout(self) # Mengubah layout utama menjadi horizontal
+        main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
 
@@ -99,34 +99,39 @@ class SpotifyTab(QWidget):
 
         left_layout.addWidget(credentials_group)
         left_layout.addWidget(search_group)
-        left_layout.addWidget(search_results_group, 1) # Beri sisa ruang ke tabel ini
+        left_layout.addWidget(search_results_group, 1)
 
         # === WIDGET SISI KANAN ===
-        tracks_group = QGroupBox("④ Daftar Lagu dari Playlist Terpilih")
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0,0,0,0)
+        right_layout.setSpacing(15)
+
+        tracks_group = QGroupBox("④ Daftar Lagu")
         tracks_layout = QVBoxLayout(tracks_group)
         self.track_table = QTableWidget()
         self.track_table.setColumnCount(3)
         self.track_table.setHorizontalHeaderLabels(["Judul Lagu", "Artis", "Album"])
-        # --- PERBAIKAN DI SINI ---
         self.track_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        # -------------------------
         self.track_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.track_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.track_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-        self.save_txt_btn = QPushButton("Simpan Daftar Lagu di Atas ke File .txt")
+        self.save_txt_btn = QPushButton("Simpan Daftar Lagu ke File .txt")
         self.save_txt_btn.setEnabled(False)
         self.save_txt_btn.clicked.connect(self.save_to_txt)
         
         tracks_layout.addWidget(self.track_table)
-        tracks_layout.addWidget(self.save_txt_btn)
+        
+        right_layout.addWidget(tracks_group)
+        right_layout.addWidget(self.save_txt_btn)
 
         # === SPLITTER UNTUK MEMISAHKAN KIRI DAN KANAN ===
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left_widget)
-        splitter.addWidget(tracks_group)
-        splitter.setStretchFactor(0, 4) # Lebar awal kolom kiri (40%)
-        splitter.setStretchFactor(1, 6) # Lebar awal kolom kanan (60%)
+        splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 5) # Lebar awal kolom kiri
+        splitter.setStretchFactor(1, 5) # Lebar awal kolom kanan
         
         main_layout.addWidget(splitter)
 
@@ -213,7 +218,8 @@ class SpotifyTab(QWidget):
     def on_search_finished(self, results):
         self.search_results = results
         self.search_results_table.setRowCount(len(results))
-        
+        is_track_search = self.search_type_combo.currentText().lower() == 'lagu'
+
         for row, item in enumerate(results):
             if item['type'] == 'playlist':
                 self.search_results_table.setItem(row, 0, QTableWidgetItem(item['name']))
@@ -223,6 +229,9 @@ class SpotifyTab(QWidget):
                 self.search_results_table.setItem(row, 0, QTableWidgetItem(item['name']))
                 self.search_results_table.setItem(row, 1, QTableWidgetItem(item['artist']))
                 self.search_results_table.setItem(row, 2, QTableWidgetItem(item['album']))
+        
+        if results and is_track_search:
+            self.save_txt_btn.setEnabled(True)
 
         self.search_btn.setText("Cari")
         self.search_btn.setEnabled(True)
@@ -254,17 +263,37 @@ class SpotifyTab(QWidget):
         self.fetch_playlist_btn.setEnabled(True)
 
     def save_to_txt(self):
-        if not self.track_list:
-            return
+        tracks_to_save = []
+        source_info = ""
+        
+        # --- PERUBAHAN LOGIKA DI SINI ---
+        is_track_search_active = self.search_type_combo.currentText().lower() == 'lagu'
+        
+        # Prioritaskan tabel daftar lagu jika ada isinya
+        if self.track_table.rowCount() > 0:
+            tracks_to_save = self.track_list
+            source_info = "dari playlist yang dipilih"
+            playlist_name = "custom_playlist"
+            selected_rows = self.search_results_table.selectionModel().selectedRows()
+            if selected_rows:
+                selected_row_index = selected_rows[0].row()
+                if self.search_results[selected_row_index]['type'] == 'playlist':
+                     playlist_name = self.search_results[selected_row_index]['name']
             
-        playlist_name = "custom_list"
-        selected_rows = self.search_results_table.selectionModel().selectedRows()
-        if selected_rows:
-            selected_row_index = selected_rows[0].row()
-            if self.search_results[selected_row_index]['type'] == 'playlist':
-                 playlist_name = self.search_results[selected_row_index]['name']
+        # Jika tidak, dan pencarian lagu aktif, ambil dari hasil pencarian
+        elif self.search_results_table.rowCount() > 0 and is_track_search_active:
+            tracks_to_save = self.search_results
+            source_info = "dari hasil pencarian lagu"
+            playlist_name = f"pencarian_{self.search_input.text()}"
+            
+        else:
+            QMessageBox.warning(self, "Tidak Ada Data", "Tidak ada daftar lagu untuk disimpan.")
+            return
 
-        safe_playlist_name = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+        if not tracks_to_save:
+            return
+        
+        safe_playlist_name = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip().replace(" ", "_")
         output_filename = f"spotify_{safe_playlist_name}.txt"
         output_path = os.path.join(FOLDER_MUSIK_UTAMA, output_filename)
         
@@ -272,11 +301,11 @@ class SpotifyTab(QWidget):
         
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
-                for track in self.track_list:
+                for track in tracks_to_save:
                     f.write(f"{track['artist']} - {track['name']}\n")
             
             QMessageBox.information(self, "Sukses", 
-                f"Daftar lagu berhasil disimpan di:\n{output_path}\n\n"
+                f"Daftar lagu {source_info} berhasil disimpan di:\n{output_path}\n\n"
                 "Anda sekarang bisa memilih file ini di tab '② Pencari Musik'.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Gagal menyimpan file: {e}")
