@@ -5,7 +5,7 @@ import requests
 import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-from pytube import Search 
+from pytube import Search
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 
@@ -33,7 +33,7 @@ class SearchWorker(QThread):
 
     def run(self):
         worker_results = []
-        
+
         ydl_opts = {'quiet': True, 'no_warnings': True}
         if not self.get_file_size:
             ydl_opts['extract_flat'] = 'in_playlist'
@@ -43,12 +43,12 @@ class SearchWorker(QThread):
                 break
 
             self.log_message.emit(self.worker_id, f"[Pekerja #{self.worker_id}] Mencari: {title}...")
-            
+
             video_info = None
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(f"ytsearch1:{title}", download=False)
-                
+
                 if info and 'entries' in info and info['entries']:
                     video_info = info['entries'][0]
 
@@ -63,12 +63,12 @@ class SearchWorker(QThread):
 
                 if self.get_file_size:
                     try:
-                        best_format = next((f for f in reversed(video_info.get('formats', [])) 
+                        best_format = next((f for f in reversed(video_info.get('formats', []))
                                             if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('filesize')), None)
                         if not best_format:
-                            best_format = next((f for f in reversed(video_info.get('formats', [])) 
+                            best_format = next((f for f in reversed(video_info.get('formats', []))
                                                 if f.get('acodec') != 'none' and f.get('filesize')), None)
-                        
+
                         if best_format and best_format.get('filesize'):
                             filesize = best_format['filesize']
                             ukuran_file_str = f"{filesize / (1024*1024):.2f} MB"
@@ -81,7 +81,7 @@ class SearchWorker(QThread):
                     except Exception:
                         ukuran_file_str = "Error"
                     log_pesan += f" ({ukuran_file_str})"
-                
+
                 self.log_message.emit(self.worker_id, log_pesan)
             else:
                 judul_hasil = "Tidak Ditemukan"
@@ -144,10 +144,10 @@ class SearchManager(QThread):
                     with open(self.output_file, 'r', encoding='utf-8') as f:
                         self.all_results = json.load(f)
                     judul_asli_sudah_diproses = {item.get('judul_asli') for item in self.all_results}
-                    
+
                     original_count = len(daftar_judul_input)
                     titles_to_process = [title for title in daftar_judul_input if title not in judul_asli_sudah_diproses]
-                    
+
                     self.log_message.emit(f"Melanjutkan proses. {len(judul_asli_sudah_diproses)} dari {original_count} lagu sudah ada.")
                 else:
                     titles_to_process = daftar_judul_input
@@ -190,7 +190,7 @@ class SearchManager(QThread):
     def handle_worker_finished(self, worker_id, results):
         self.all_results.extend(results)
         self.workers_finished_count += 1
-        
+
         with QMutexLocker(file_mutex):
             try:
                 with open(self.output_file, 'w', encoding='utf-8') as f:
@@ -236,9 +236,9 @@ class DownloadWorker(QThread):
         for i, (row_index, link, filename, judul_asli) in enumerate(self.items):
             if not self.is_running:
                 break
-            
+
             self.progress.emit(int((i + 1) / total_items * 100), f"Memproses [{i+1}/{total_items}]: {filename}")
-            
+
             sukses = False
             if self.mode == 'audio':
                 sukses = self._unduh_audio(link, filename, audio_path)
@@ -250,12 +250,12 @@ class DownloadWorker(QThread):
                 self.progress.emit(int((i + 1) / total_items * 100), f"   -> Mengunduh Audio...")
                 sukses_a = self._unduh_audio(link, filename, audio_path)
                 sukses = sukses_v or sukses_a
-            
+
             if sukses:
                 self._update_json_status(judul_asli)
-            
+
             self.item_finished.emit(row_index, sukses)
-        
+
         if self.is_running:
             self.finished.emit("Semua proses unduhan selesai.")
         else:
@@ -303,19 +303,19 @@ class DownloadWorker(QThread):
         except Exception as e:
             self.progress.emit(-1, f"\n   -> ❌ Error saat mengunduh video: {e}")
             return False
-            
+
     def _update_json_status(self, judul_asli_to_update):
         try:
             with open(self.json_file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             item_found = False
             for item in data:
                 if item.get('judul_asli') == judul_asli_to_update:
                     item['download'] = True
                     item_found = True
                     break
-            
+
             if item_found:
                 with open(self.json_file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
@@ -340,7 +340,7 @@ class ThumbnailWorker(QThread):
         if not video_id:
             self.finished.emit("ID video tidak valid dari URL.", QPixmap())
             return
-            
+
         qualities = ['maxresdefault.jpg', 'sddefault.jpg', 'hqdefault.jpg', 'mqdefault.jpg']
         image_data = None
         for quality in qualities:
@@ -356,7 +356,7 @@ class ThumbnailWorker(QThread):
         if not image_data:
             self.finished.emit("Gagal memuat gambar thumbnail.", QPixmap())
             return
-        
+
         pixmap = QPixmap()
         pixmap.loadFromData(image_data)
 
@@ -368,45 +368,79 @@ class ThumbnailWorker(QThread):
                 video_title = info_resp.json().get('title', 'Judul tidak ditemukan')
         except requests.exceptions.RequestException:
             pass
-        
+
         self.finished.emit(video_title, pixmap)
 
-class SpotifySearchWorker(QThread):
+class SpotifyWorker(QThread):
     """
-    Worker untuk mengambil daftar lagu dari playlist Spotify.
+    Worker untuk berinteraksi dengan Spotify API.
+    Bisa mencari playlist/lagu dan mengambil daftar lagu dari playlist.
     """
-    finished = pyqtSignal(list)
+    tracks_finished = pyqtSignal(list)
+    search_finished = pyqtSignal(list)
     error = pyqtSignal(str)
 
-    def __init__(self, client_id, client_secret, playlist_url):
+    def __init__(self, client_id, client_secret, query, task_type):
         super().__init__()
         self.client_id = client_id
         self.client_secret = client_secret
-        self.playlist_url = playlist_url
+        self.query = query
+        self.task_type = task_type # 'playlist_tracks', 'search_playlist', 'search_lagu'
 
     def run(self):
         try:
             auth_manager = SpotifyClientCredentials(client_id=self.client_id, client_secret=self.client_secret)
             sp = spotipy.Spotify(auth_manager=auth_manager)
 
-            results = sp.playlist_tracks(self.playlist_url)
-            tracks_raw = results['items']
-            
-            while results['next']:
-                results = sp.next(results)
-                tracks_raw.extend(results['items'])
+            if self.task_type == 'playlist_tracks':
+                results = sp.playlist_tracks(self.query)
+                tracks_raw = results['items']
 
-            track_list = []
-            for item in tracks_raw:
-                track = item.get('track')
-                if track and track.get('artists'):
-                    track_list.append({
-                        'name': track['name'],
-                        'artist': track['artists'][0]['name'],
-                        'album': track['album']['name']
+                while results['next']:
+                    results = sp.next(results)
+                    tracks_raw.extend(results['items'])
+
+                track_list = []
+                for item in tracks_raw:
+                    track = item.get('track')
+                    if track and track.get('artists'):
+                        track_list.append({
+                            'name': track.get('name', 'N/A'),
+                            'artist': track['artists'][0].get('name', 'N/A'),
+                            'album': track.get('album', {}).get('name', 'N/A')
+                        })
+                self.tracks_finished.emit(track_list)
+
+            elif self.task_type == 'search_playlist':
+                results = sp.search(q=self.query, type='playlist', limit=50)
+                playlists = []
+                for item in results.get('playlists', {}).get('items', []):
+                    playlists.append({
+                        'type': 'playlist',
+                        'name': item.get('name', 'N/A'),
+                        'owner': item.get('owner', {}).get('display_name', 'N/A'),
+                        'total_tracks': item.get('tracks', {}).get('total', 0),
+                        'id': item.get('id')
                     })
-            
-            self.finished.emit(track_list)
+                self.search_finished.emit(playlists)
+
+            elif self.task_type == 'search_lagu':
+                results = sp.search(q=self.query, type='track', limit=50)
+                tracks = []
+                for item in results.get('tracks', {}).get('items', []):
+                    tracks.append({
+                        'type': 'track',
+                        'name': item.get('name', 'N/A'),
+                        'artist': item.get('artists', [{}])[0].get('name', 'N/A'),
+                        'album': item.get('album', {}).get('name', 'N/A'),
+                        'id': item.get('id')
+                    })
+                self.search_finished.emit(tracks)
 
         except Exception as e:
-            self.error.emit(str(e))
+            error_message = str(e)
+            if "invalid client" in error_message.lower():
+                error_message = "Client ID atau Client Secret tidak valid. Harap periksa kembali."
+            elif "exceeded rate limit" in error_message.lower():
+                 error_message = "Melebihi batas permintaan API. Coba lagi nanti."
+            self.error.emit(error_message)
