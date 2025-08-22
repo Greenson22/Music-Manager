@@ -2,7 +2,7 @@ import os
 
 # --- KONFIGURASI AWAL ---
 # Ganti dengan path FFMPEG di komputer Anda. Diperlukan untuk konversi audio.
-FFMPEG_PATH = r'C:\ffmpeg\bin' # <--- UBAH INI SESUAI LOKASI FFMPEG ANDA
+FFMPEG_PATH = None # <--- BIARKAN KOSONG AGAR MENCARI OTOMATIS
 FOLDER_MUSIK_UTAMA = "data_musik"
 FOLDER_HASIL_JSON = os.path.join(FOLDER_MUSIK_UTAMA, "hasil")
 FOLDER_DOWNLOAD_UTAMA = "musikku"
