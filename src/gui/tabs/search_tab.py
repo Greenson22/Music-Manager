@@ -23,7 +23,7 @@ class SearchTab(QWidget):
 
         # Input File
         input_layout = QHBoxLayout()
-        self.input_file_label = QLineEdit("Pilih file JSON berisi daftar lagu...")
+        self.input_file_label = QLineEdit("Pilih file JSON atau TXT berisi daftar lagu...")
         self.input_file_label.setReadOnly(True)
         self.browse_input_btn = QPushButton("Pilih File...")
         self.browse_input_btn.clicked.connect(self.browse_input_file)
@@ -65,7 +65,16 @@ class SearchTab(QWidget):
 
     def browse_input_file(self):
         os.makedirs(FOLDER_MUSIK_UTAMA, exist_ok=True)
-        file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File JSON", FOLDER_MUSIK_UTAMA, "JSON Files (*.json)")
+        # --- PERUBAHAN DI SINI ---
+        # Menambahkan filter untuk file .txt
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Pilih File Input", 
+            FOLDER_MUSIK_UTAMA, 
+            "Supported Files (*.json *.txt);;JSON Files (*.json);;Text Files (*.txt)"
+        )
+        # -------------------------
+        
         if file_path:
             self.input_file_label.setText(file_path)
             

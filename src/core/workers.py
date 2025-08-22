@@ -11,7 +11,6 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from config import FFMPEG_PATH, FOLDER_HASIL_JSON
 
 class SearchWorker(QThread):
-    # ... (Isi kelas SearchWorker, sama seperti di file sebelumnya) ...
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(str)
     
@@ -22,12 +21,27 @@ class SearchWorker(QThread):
         self.is_running = True
 
     def run(self):
+        daftar_judul_input = []
         try:
-            with open(self.input_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                daftar_judul_input = data.get('judul_lagu', [])
+            # --- PERUBAHAN DI SINI ---
+            # Mengecek ekstensi file dan membacanya sesuai format
+            file_extension = os.path.splitext(self.input_file)[1].lower()
+
+            if file_extension == '.json':
+                with open(self.input_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    daftar_judul_input = data.get('judul_lagu', [])
+            elif file_extension == '.txt':
+                with open(self.input_file, 'r', encoding='utf-8') as f:
+                    # Membaca setiap baris, menghapus spasi kosong di awal/akhir
+                    daftar_judul_input = [line.strip() for line in f if line.strip()]
+            else:
+                self.finished.emit(f"Format file tidak didukung: {file_extension}")
+                return
+            # --------------------------
+
             if not daftar_judul_input:
-                self.finished.emit("File input tidak valid atau tidak berisi 'judul_lagu'.")
+                self.finished.emit("File input kosong atau formatnya tidak sesuai.")
                 return
         except Exception as e:
             self.finished.emit(f"Error saat membaca file input: {e}")
@@ -93,7 +107,7 @@ class SearchWorker(QThread):
         self.is_running = False
 
 class DownloadWorker(QThread):
-    # ... (Isi kelas DownloadWorker, sama seperti di file sebelumnya) ...
+    # ... (Isi kelas DownloadWorker tetap sama, tidak perlu diubah) ...
     progress = pyqtSignal(int, str)
     item_finished = pyqtSignal(int, bool)
     finished = pyqtSignal(str)
@@ -210,7 +224,7 @@ class DownloadWorker(QThread):
         self.is_running = False
 
 class ThumbnailWorker(QThread):
-    # ... (Isi kelas ThumbnailWorker, sama seperti di file sebelumnya) ...
+    # ... (Isi kelas ThumbnailWorker tetap sama, tidak perlu diubah) ...
     finished = pyqtSignal(str, QPixmap)
 
     def __init__(self, url):
