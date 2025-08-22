@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QCheckBox, QComboBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QBrush
+from PyQt6.QtGui import QColor, QBrush, QIcon
 
 # Import worker dan konfigurasi
 from core.workers import DownloadWorker
@@ -100,16 +100,33 @@ class DownloadTab(QWidget):
         self.mode_group.addButton(self.radio_audio)
         self.mode_group.addButton(self.radio_video)
         self.mode_group.addButton(self.radio_both)
-        self.output_path_label = QLineEdit(os.path.abspath(FOLDER_DOWNLOAD_UTAMA))
-        self.browse_output_btn = QPushButton("Pilih Folder Output")
-        self.browse_output_btn.clicked.connect(self.browse_output_folder)
+        
+        # --- PERUBAHAN DI SINI ---
+        subfolder_label = QLabel(f"Pilih atau buat folder baru di '{FOLDER_DOWNLOAD_UTAMA}':")
+        
+        subfolder_layout = QHBoxLayout()
+        self.subfolder_combo = QComboBox()
+        self.subfolder_combo.setEditable(True)
+        self.subfolder_combo.setPlaceholderText("Pilih folder atau ketik nama baru...")
+        self.subfolder_combo.view().setWordWrap(True) # Untuk nama folder panjang
+        
+        # Tombol refresh untuk memuat ulang daftar folder
+        self.refresh_folders_btn = QPushButton()
+        self.refresh_folders_btn.setIcon(QIcon.fromTheme("view-refresh")) # Ikon refresh standar
+        self.refresh_folders_btn.setToolTip("Muat ulang daftar folder")
+        self.refresh_folders_btn.setFixedWidth(35)
+        self.refresh_folders_btn.clicked.connect(self.populate_subfolder_combo)
+        
+        subfolder_layout.addWidget(self.subfolder_combo, 1)
+        subfolder_layout.addWidget(self.refresh_folders_btn)
+
         options_group_layout.addWidget(self.radio_audio)
         options_group_layout.addWidget(self.radio_video)
         options_group_layout.addWidget(self.radio_both)
         options_group_layout.addSpacing(10)
-        options_group_layout.addWidget(QLabel("Folder Penyimpanan:"))
-        options_group_layout.addWidget(self.output_path_label)
-        options_group_layout.addWidget(self.browse_output_btn)
+        options_group_layout.addWidget(subfolder_label)
+        options_group_layout.addLayout(subfolder_layout)
+        # -------------------------
 
         action_group = QGroupBox("③ Aksi")
         action_group_layout = QVBoxLayout(action_group)
@@ -129,6 +146,27 @@ class DownloadTab(QWidget):
 
         main_layout.addLayout(left_layout, 7)
         main_layout.addLayout(right_layout, 3)
+        
+        # Muat daftar folder saat tab pertama kali dibuat
+        self.populate_subfolder_combo()
+
+    # --- FUNGSI BARU UNTUK MEMUAT FOLDER ---
+    def populate_subfolder_combo(self):
+        """Memindai folder download utama dan mengisi combobox dengan subfolder yang ada."""
+        self.subfolder_combo.clear()
+        try:
+            os.makedirs(FOLDER_DOWNLOAD_UTAMA, exist_ok=True)
+            # Dapatkan semua item di direktori dan filter hanya untuk folder
+            subfolders = [d for d in os.listdir(FOLDER_DOWNLOAD_UTAMA) 
+                          if os.path.isdir(os.path.join(FOLDER_DOWNLOAD_UTAMA, d))]
+            # Urutkan berdasarkan abjad, tidak case-sensitive
+            subfolders.sort(key=str.lower)
+            self.subfolder_combo.addItems(subfolders)
+        except Exception as e:
+            self.log_box.append(f"⚠️ Gagal memuat daftar folder: {e}")
+        # Atur agar tidak ada item yang terpilih secara default
+        self.subfolder_combo.setCurrentIndex(-1)
+    # ------------------------------------------
 
     def toggle_select_all(self, state):
         check_state = Qt.CheckState.Checked if state else Qt.CheckState.Unchecked
@@ -144,42 +182,35 @@ class DownloadTab(QWidget):
 
         is_greater_than = self.filter_combo.currentIndex() == 0
 
-        # Mulai dengan mencentang semua item
         for i in range(self.table.rowCount()):
             self.table.item(i, 0).setCheckState(Qt.CheckState.Checked)
 
-        # Lakukan proses pengecualian
         for i in range(self.table.rowCount()):
             size_item = self.table.item(i, 3)
-            # Jika tidak ada item ukuran, langsung kecualikan
             if not size_item:
                 self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
                 continue
 
             size_text = size_item.text()
             try:
-                # Coba ekstrak angka dari teks
                 match = re.search(r'[\d\.]+', size_text)
                 if match:
                     current_size_mb = float(match.group())
-                    # Jika berhasil, terapkan logika filter ukuran
                     if is_greater_than and current_size_mb > limit_size_mb:
                         self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
                     elif not is_greater_than and current_size_mb < limit_size_mb:
                         self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
                 else:
-                    # --- PERUBAHAN DI SINI ---
-                    # Jika tidak ada angka dalam teks (misal: "N/A"), kecualikan
                     self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
-                    # -------------------------
             except (ValueError, IndexError):
-                # Jika terjadi error saat konversi, berarti bukan angka, jadi kecualikan
                 self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
                 continue
         
         self.log_box.append(f"✅ Filter pemilihan cerdas diterapkan.")
 
     def browse_json_file(self):
+        # Muat ulang daftar folder setiap kali pengguna memilih file baru, untuk jaga-jaga
+        self.populate_subfolder_combo()
         os.makedirs(FOLDER_HASIL_JSON, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File JSON", FOLDER_HASIL_JSON, "JSON Files (*.json)")
         if file_path:
@@ -227,11 +258,6 @@ class DownloadTab(QWidget):
             self.log_box.append(f"❌ Error memuat file JSON: {e}")
             self.start_download_btn.setEnabled(False)
             
-    def browse_output_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Pilih Folder Output", self.output_path_label.text())
-        if folder:
-            self.output_path_label.setText(folder)
-
     def start_download(self):
         items_to_download = []
         for i in range(self.table.rowCount()):
@@ -250,7 +276,16 @@ class DownloadTab(QWidget):
         if self.radio_video.isChecked(): download_mode = 'video'
         elif self.radio_both.isChecked(): download_mode = 'both'
         
-        output_path = self.output_path_label.text()
+        # --- PERUBAHAN DI SINI ---
+        subfolder_name = self.subfolder_combo.currentText().strip()
+        # Membersihkan nama folder dari karakter yang tidak valid
+        subfolder_name = re.sub(r'[\\/*?:"<>|]', "", subfolder_name)
+        
+        if subfolder_name:
+            output_path = os.path.join(FOLDER_DOWNLOAD_UTAMA, subfolder_name)
+        else:
+            output_path = FOLDER_DOWNLOAD_UTAMA
+        # -------------------------
         
         self.log_box.clear()
         self.progress_bar.setValue(0)
@@ -291,3 +326,6 @@ class DownloadTab(QWidget):
         self.browse_json_btn.setEnabled(True)
         self.progress_bar.setValue(100)
         self.download_worker = None
+        
+        # Perbarui daftar folder setelah unduhan selesai, kalau-kalau folder baru dibuat
+        self.populate_subfolder_combo()
