@@ -3,7 +3,7 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QComboBox, QSplitter, QFileDialog
+    QComboBox, QSplitter, QFileDialog, QSpinBox
 )
 from PyQt6.QtCore import Qt
 
@@ -67,9 +67,30 @@ class SpotifyTab(QWidget):
         self.search_input.setPlaceholderText("Masukkan kata kunci pencarian...")
         self.search_btn = QPushButton("Cari")
         self.search_btn.clicked.connect(self.start_search)
+        
+        self.search_limit_label = QLabel("Hasil/Hal:")
+        self.search_limit_spinbox = QSpinBox()
+        self.search_limit_spinbox.setMinimum(1)
+        self.search_limit_spinbox.setMaximum(50)
+        self.search_limit_spinbox.setValue(50)
+        self.search_limit_spinbox.setFixedWidth(50)
+
+        self.pages_label = QLabel("Halaman:")
+        self.pages_spinbox = QSpinBox()
+        self.pages_spinbox.setMinimum(1)
+        # --- PERUBAHAN DI SINI ---
+        self.pages_spinbox.setMaximum(99) # Batas yang sangat tinggi
+        # -------------------------
+        self.pages_spinbox.setValue(1)
+        self.pages_spinbox.setFixedWidth(50)
+
         search_input_layout.addWidget(QLabel("Cari:"))
         search_input_layout.addWidget(self.search_type_combo)
         search_input_layout.addWidget(self.search_input, 1)
+        search_input_layout.addWidget(self.search_limit_label)
+        search_input_layout.addWidget(self.search_limit_spinbox)
+        search_input_layout.addWidget(self.pages_label)
+        search_input_layout.addWidget(self.pages_spinbox)
         search_input_layout.addWidget(self.search_btn)
         
         playlist_url_layout = QHBoxLayout()
@@ -135,7 +156,6 @@ class SpotifyTab(QWidget):
         
         main_layout.addWidget(splitter)
 
-
     def load_credentials(self):
         creds = load_spotify_credentials()
         self.client_id_input.setText(creds.get("client_id", ""))
@@ -165,6 +185,8 @@ class SpotifyTab(QWidget):
             return
 
         search_type = self.search_type_combo.currentText().lower()
+        limit = self.search_limit_spinbox.value()
+        num_pages = self.pages_spinbox.value()
         
         self.search_btn.setText("Mencari...")
         self.search_btn.setEnabled(False)
@@ -173,7 +195,14 @@ class SpotifyTab(QWidget):
         self.track_table.setRowCount(0)
         self.save_txt_btn.setEnabled(False)
 
-        self.worker = SpotifyWorker(self.client_id_input.text(), self.client_secret_input.text(), query, f"search_{search_type}")
+        self.worker = SpotifyWorker(
+            self.client_id_input.text(), 
+            self.client_secret_input.text(), 
+            query, 
+            f"search_{search_type}", 
+            limit,
+            num_pages
+        )
         self.worker.search_finished.connect(self.on_search_finished)
         self.worker.error.connect(self.on_fetch_error)
         self.worker.start()
@@ -210,7 +239,12 @@ class SpotifyTab(QWidget):
         self.save_txt_btn.setEnabled(False)
         self.track_table.setRowCount(0)
 
-        self.worker = SpotifyWorker(self.client_id_input.text(), self.client_secret_input.text(), playlist_id, 'playlist_tracks')
+        self.worker = SpotifyWorker(
+            self.client_id_input.text(), 
+            self.client_secret_input.text(), 
+            playlist_id, 
+            'playlist_tracks'
+        )
         self.worker.tracks_finished.connect(self.on_fetch_tracks_finished)
         self.worker.error.connect(self.on_fetch_error)
         self.worker.start()
@@ -254,7 +288,6 @@ class SpotifyTab(QWidget):
             self.save_txt_btn.setEnabled(True)
         self.track_table.resizeRowsToContents()
 
-
     def on_fetch_error(self, error_message):
         QMessageBox.critical(self, "Error", f"Terjadi kesalahan:\n{error_message}")
         self.search_btn.setText("Cari")
@@ -291,13 +324,11 @@ class SpotifyTab(QWidget):
         if not tracks_to_save:
             return
         
-        # --- PERUBAHAN DI SINI ---
         safe_playlist_name = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip().replace(" ", "_")
         default_filename = f"spotify_{safe_playlist_name}.txt"
         
         os.makedirs(FOLDER_MUSIK_UTAMA, exist_ok=True)
         
-        # Buka dialog "Save File"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Simpan Daftar Lagu",
@@ -305,7 +336,6 @@ class SpotifyTab(QWidget):
             "Text Files (*.txt);;All Files (*)"
         )
         
-        # Jika pengguna tidak membatalkan dialog
         if file_path:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
