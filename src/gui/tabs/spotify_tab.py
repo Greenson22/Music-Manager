@@ -3,12 +3,12 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QComboBox
+    QComboBox, QSplitter
 )
 from PyQt6.QtCore import Qt
 
 # Import worker dan konfigurasi
-from core.workers import SpotifyWorker # Diubah dari SpotifySearchWorker
+from core.workers import SpotifyWorker
 from config import FOLDER_MUSIK_UTAMA, save_spotify_credentials, load_spotify_credentials
 
 class SpotifyTab(QWidget):
@@ -21,9 +21,15 @@ class SpotifyTab(QWidget):
         self.load_credentials()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        main_layout = QHBoxLayout(self) # Mengubah layout utama menjadi horizontal
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+
+        # === WIDGET SISI KIRI ===
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0,0,0,0)
+        left_layout.setSpacing(15)
 
         # Grup 1: Kredensial API
         credentials_group = QGroupBox("① Kredensial Spotify API")
@@ -54,16 +60,6 @@ class SpotifyTab(QWidget):
         search_layout = QVBoxLayout(search_group)
         search_layout.setSpacing(10)
 
-        # Input URL Playlist (opsional)
-        playlist_url_layout = QHBoxLayout()
-        self.playlist_url_input = QLineEdit()
-        self.playlist_url_input.setPlaceholderText("Atau, langsung masukkan URL/ID Playlist Spotify di sini")
-        self.fetch_playlist_btn = QPushButton("Ambil dari URL")
-        self.fetch_playlist_btn.clicked.connect(self.fetch_playlist_from_url)
-        playlist_url_layout.addWidget(self.playlist_url_input)
-        playlist_url_layout.addWidget(self.fetch_playlist_btn)
-
-        # Input Pencarian
         search_input_layout = QHBoxLayout()
         self.search_type_combo = QComboBox()
         self.search_type_combo.addItems(["Playlist", "Lagu"])
@@ -76,16 +72,23 @@ class SpotifyTab(QWidget):
         search_input_layout.addWidget(self.search_input, 1)
         search_input_layout.addWidget(self.search_btn)
         
+        playlist_url_layout = QHBoxLayout()
+        self.playlist_url_input = QLineEdit()
+        self.playlist_url_input.setPlaceholderText("Atau, langsung tempel URL/ID Playlist di sini")
+        self.fetch_playlist_btn = QPushButton("Ambil dari URL")
+        self.fetch_playlist_btn.clicked.connect(self.fetch_playlist_from_url)
+        playlist_url_layout.addWidget(self.playlist_url_input)
+        playlist_url_layout.addWidget(self.fetch_playlist_btn)
+        
         search_layout.addLayout(search_input_layout)
         search_layout.addLayout(playlist_url_layout)
 
-
         # Grup 3: Hasil Pencarian
-        search_results_group = QGroupBox("③ Hasil Pencarian (Klik dua kali pada playlist untuk memuat lagu)")
+        search_results_group = QGroupBox("③ Hasil Pencarian (Klik 2x pada playlist)")
         search_results_layout = QVBoxLayout(search_results_group)
         self.search_results_table = QTableWidget()
         self.search_results_table.setColumnCount(3)
-        self.search_results_table.setHorizontalHeaderLabels(["Nama", "Pemilik / Artis", "Total Lagu / Album"])
+        self.search_results_table.setHorizontalHeaderLabels(["Nama", "Pemilik / Artis", "Info"])
         self.search_results_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.search_results_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.search_results_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -94,13 +97,19 @@ class SpotifyTab(QWidget):
         self.search_results_table.itemDoubleClicked.connect(self.on_search_result_selected)
         search_results_layout.addWidget(self.search_results_table)
 
-        # Grup 4: Hasil Lagu
+        left_layout.addWidget(credentials_group)
+        left_layout.addWidget(search_group)
+        left_layout.addWidget(search_results_group, 1) # Beri sisa ruang ke tabel ini
+
+        # === WIDGET SISI KANAN ===
         tracks_group = QGroupBox("④ Daftar Lagu dari Playlist Terpilih")
         tracks_layout = QVBoxLayout(tracks_group)
         self.track_table = QTableWidget()
         self.track_table.setColumnCount(3)
         self.track_table.setHorizontalHeaderLabels(["Judul Lagu", "Artis", "Album"])
+        # --- PERBAIKAN DI SINI ---
         self.track_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        # -------------------------
         self.track_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.track_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.track_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -112,10 +121,15 @@ class SpotifyTab(QWidget):
         tracks_layout.addWidget(self.track_table)
         tracks_layout.addWidget(self.save_txt_btn)
 
-        layout.addWidget(credentials_group)
-        layout.addWidget(search_group)
-        layout.addWidget(search_results_group, 1)
-        layout.addWidget(tracks_group, 1)
+        # === SPLITTER UNTUK MEMISAHKAN KIRI DAN KANAN ===
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_widget)
+        splitter.addWidget(tracks_group)
+        splitter.setStretchFactor(0, 4) # Lebar awal kolom kiri (40%)
+        splitter.setStretchFactor(1, 6) # Lebar awal kolom kanan (60%)
+        
+        main_layout.addWidget(splitter)
+
 
     def load_credentials(self):
         creds = load_spotify_credentials()
@@ -177,7 +191,7 @@ class SpotifyTab(QWidget):
         if selected_item['type'] == 'playlist':
             playlist_id = selected_item['id']
             self.fetch_playlist(playlist_id)
-        else: # Jika yang di-klik adalah lagu
+        else:
              QMessageBox.information(self, "Info", "Silakan pilih item berjenis 'Playlist' untuk memuat daftar lagunya.")
 
 
@@ -213,6 +227,7 @@ class SpotifyTab(QWidget):
         self.search_btn.setText("Cari")
         self.search_btn.setEnabled(True)
         self.fetch_playlist_btn.setEnabled(True)
+        self.search_results_table.resizeRowsToContents()
 
     def on_fetch_tracks_finished(self, track_list):
         self.track_list = track_list
@@ -228,6 +243,8 @@ class SpotifyTab(QWidget):
         self.search_btn.setEnabled(True)
         if track_list:
             self.save_txt_btn.setEnabled(True)
+        self.track_table.resizeRowsToContents()
+
 
     def on_fetch_error(self, error_message):
         QMessageBox.critical(self, "Error", f"Terjadi kesalahan:\n{error_message}")
@@ -240,9 +257,7 @@ class SpotifyTab(QWidget):
         if not self.track_list:
             return
             
-        # Membuat nama file default yang lebih informatif
         playlist_name = "custom_list"
-        # Coba dapatkan nama dari playlist yang dipilih di tabel hasil pencarian
         selected_rows = self.search_results_table.selectionModel().selectedRows()
         if selected_rows:
             selected_row_index = selected_rows[0].row()
