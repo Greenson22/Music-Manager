@@ -415,26 +415,43 @@ class SpotifyWorker(QThread):
                 results = sp.search(q=self.query, type='playlist', limit=50)
                 playlists = []
                 for item in results.get('playlists', {}).get('items', []):
+                    # --- PERBAIKAN DI SINI ---
+                    if not item: # Lewati jika item hasil pencarian kosong
+                        continue
+                    
+                    owner_info = item.get('owner') or {}
+                    tracks_info = item.get('tracks') or {}
+
                     playlists.append({
                         'type': 'playlist',
                         'name': item.get('name', 'N/A'),
-                        'owner': item.get('owner', {}).get('display_name', 'N/A'),
-                        'total_tracks': item.get('tracks', {}).get('total', 0),
+                        'owner': owner_info.get('display_name', 'N/A'),
+                        'total_tracks': tracks_info.get('total', 0),
                         'id': item.get('id')
                     })
+                    # -------------------------
                 self.search_finished.emit(playlists)
 
             elif self.task_type == 'search_lagu':
                 results = sp.search(q=self.query, type='track', limit=50)
                 tracks = []
                 for item in results.get('tracks', {}).get('items', []):
+                    # --- PERBAIKAN DI SINI ---
+                    if not item: # Lewati jika item hasil pencarian kosong
+                        continue
+                    
+                    album_info = item.get('album') or {}
+                    artist_list = item.get('artists') or []
+                    artist_name = artist_list[0].get('name', 'N/A') if artist_list else 'N/A'
+
                     tracks.append({
                         'type': 'track',
                         'name': item.get('name', 'N/A'),
-                        'artist': item.get('artists', [{}])[0].get('name', 'N/A'),
-                        'album': item.get('album', {}).get('name', 'N/A'),
+                        'artist': artist_name,
+                        'album': album_info.get('name', 'N/A'),
                         'id': item.get('id')
                     })
+                    # -------------------------
                 self.search_finished.emit(tracks)
 
         except Exception as e:
