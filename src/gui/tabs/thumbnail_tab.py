@@ -32,9 +32,13 @@ class ThumbnailTab(QWidget):
 
         # Image Preview
         self.image_preview = QLabel("Masukkan URL untuk melihat pratinjau")
+        # --- PERUBAHAN DI SINI ---
+        self.image_preview.setObjectName("imagePreview") # Menambahkan object name untuk styling
+        # -------------------------
         self.image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_preview.setMinimumHeight(300)
-        self.image_preview.setStyleSheet("border: 1px solid #555; border-radius: 5px; background-color: #3C3C3C;")
+        # Baris stylesheet di bawah ini dihapus karena sudah diatur di config.py
+        # self.image_preview.setStyleSheet("border: 1px solid #555; border-radius: 5px; background-color: #3C3C3C;")
 
         # Judul Video
         self.video_title_label = QLabel("")
