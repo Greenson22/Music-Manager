@@ -4,9 +4,11 @@ import re
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
     QTextEdit, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QRadioButton, QButtonGroup, QFileDialog, QGroupBox, QSpacerItem, QSizePolicy
+    QRadioButton, QButtonGroup, QFileDialog, QGroupBox, QSpacerItem, 
+    QSizePolicy, QCheckBox, QComboBox
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QBrush
 
 # Import worker dan konfigurasi
 from core.workers import DownloadWorker
@@ -20,7 +22,6 @@ class DownloadTab(QWidget):
         self.current_json_path = ""
 
     def init_ui(self):
-        # Layout utama menggunakan QHBoxLayout untuk membagi area tabel dan kontrol
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
@@ -28,8 +29,31 @@ class DownloadTab(QWidget):
         # === KOLOM KIRI (Tabel dan Log) ===
         left_layout = QVBoxLayout()
         
+        selection_group = QGroupBox("Opsi Pemilihan Cerdas")
+        selection_layout = QHBoxLayout(selection_group)
+        
+        self.select_all_checkbox = QCheckBox("Pilih / Batal Pilih Semua")
+        self.select_all_checkbox.clicked.connect(self.toggle_select_all)
+        
+        self.filter_label = QLabel("Kecualikan jika ukuran file:")
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(["> (Lebih besar dari)", "< (Lebih kecil dari)"])
+        
+        self.size_input = QLineEdit()
+        self.size_input.setPlaceholderText("Ukuran (MB)")
+        self.size_input.setFixedWidth(80)
+
+        self.apply_filter_btn = QPushButton("Terapkan")
+        self.apply_filter_btn.clicked.connect(self.apply_smart_selection)
+
+        selection_layout.addWidget(self.select_all_checkbox)
+        selection_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        selection_layout.addWidget(self.filter_label)
+        selection_layout.addWidget(self.filter_combo)
+        selection_layout.addWidget(self.size_input)
+        selection_layout.addWidget(self.apply_filter_btn)
+
         self.table = QTableWidget()
-        # --- PERUBAHAN DI SINI: Menambah kolom dan header baru ---
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["", "Judul Asli", "Judul Video YouTube", "Ukuran", "Status", "URL"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -37,8 +61,7 @@ class DownloadTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.setColumnHidden(5, True) # URL sekarang di kolom ke-5 (indeks 5)
-        # --------------------------------------------------------
+        self.table.setColumnHidden(5, True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setWordWrap(True)
 
@@ -47,6 +70,7 @@ class DownloadTab(QWidget):
         self.log_box.setReadOnly(True)
         self.log_box.setFixedHeight(150)
 
+        left_layout.addWidget(selection_group)
         left_layout.addWidget(self.table, 1)
         left_layout.addWidget(self.progress_bar)
         left_layout.addWidget(QLabel("Log Proses:"))
@@ -57,7 +81,6 @@ class DownloadTab(QWidget):
         right_layout.setSpacing(20)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Grup-grup kontrol tetap sama
         source_group = QGroupBox("① Pilih Sumber")
         source_group_layout = QVBoxLayout(source_group)
         self.json_file_label = QLineEdit("Pilih file JSON...")
@@ -107,6 +130,55 @@ class DownloadTab(QWidget):
         main_layout.addLayout(left_layout, 7)
         main_layout.addLayout(right_layout, 3)
 
+    def toggle_select_all(self, state):
+        check_state = Qt.CheckState.Checked if state else Qt.CheckState.Unchecked
+        for i in range(self.table.rowCount()):
+            self.table.item(i, 0).setCheckState(check_state)
+            
+    def apply_smart_selection(self):
+        try:
+            limit_size_mb = float(self.size_input.text())
+        except ValueError:
+            self.log_box.append("⚠️ Harap masukkan angka yang valid untuk ukuran file.")
+            return
+
+        is_greater_than = self.filter_combo.currentIndex() == 0
+
+        # Mulai dengan mencentang semua item
+        for i in range(self.table.rowCount()):
+            self.table.item(i, 0).setCheckState(Qt.CheckState.Checked)
+
+        # Lakukan proses pengecualian
+        for i in range(self.table.rowCount()):
+            size_item = self.table.item(i, 3)
+            # Jika tidak ada item ukuran, langsung kecualikan
+            if not size_item:
+                self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
+                continue
+
+            size_text = size_item.text()
+            try:
+                # Coba ekstrak angka dari teks
+                match = re.search(r'[\d\.]+', size_text)
+                if match:
+                    current_size_mb = float(match.group())
+                    # Jika berhasil, terapkan logika filter ukuran
+                    if is_greater_than and current_size_mb > limit_size_mb:
+                        self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
+                    elif not is_greater_than and current_size_mb < limit_size_mb:
+                        self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
+                else:
+                    # --- PERUBAHAN DI SINI ---
+                    # Jika tidak ada angka dalam teks (misal: "N/A"), kecualikan
+                    self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
+                    # -------------------------
+            except (ValueError, IndexError):
+                # Jika terjadi error saat konversi, berarti bukan angka, jadi kecualikan
+                self.table.item(i, 0).setCheckState(Qt.CheckState.Unchecked)
+                continue
+        
+        self.log_box.append(f"✅ Filter pemilihan cerdas diterapkan.")
+
     def browse_json_file(self):
         os.makedirs(FOLDER_HASIL_JSON, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File JSON", FOLDER_HASIL_JSON, "JSON Files (*.json)")
@@ -123,21 +195,31 @@ class DownloadTab(QWidget):
             
             self.table.setRowCount(len(data))
             for row, item in enumerate(data):
+                is_downloaded = item.get("download", False)
+                status = "Sudah diunduh" if is_downloaded else "Belum diunduh"
+                
                 chk_box_item = QTableWidgetItem()
                 chk_box_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
                 chk_box_item.setCheckState(Qt.CheckState.Unchecked)
                 
-                status = "Sudah diunduh" if item.get("download") else "Belum diunduh"
-                
-                # --- PERUBAHAN DI SINI: Mengisi data ke kolom yang benar ---
+                judul_asli_item = QTableWidgetItem(item.get("judul_asli", ""))
+                judul_video_item = QTableWidgetItem(item.get("judul_video", ""))
+                ukuran_file_item = QTableWidgetItem(item.get("ukuran_file", "N/A"))
+                status_item = QTableWidgetItem(status)
+                link_item = QTableWidgetItem(item.get("link_youtube", ""))
+
                 self.table.setItem(row, 0, chk_box_item)
-                self.table.setItem(row, 1, QTableWidgetItem(item.get("judul_asli", "")))
-                self.table.setItem(row, 2, QTableWidgetItem(item.get("judul_video", "")))
-                self.table.setItem(row, 3, QTableWidgetItem(item.get("ukuran_file", "N/A"))) # Kolom ukuran
-                self.table.setItem(row, 4, QTableWidgetItem(status)) # Kolom status
-                self.table.setItem(row, 5, QTableWidgetItem(item.get("link_youtube", ""))) # Kolom URL
-                # -----------------------------------------------------------
-            
+                self.table.setItem(row, 1, judul_asli_item)
+                self.table.setItem(row, 2, judul_video_item)
+                self.table.setItem(row, 3, ukuran_file_item)
+                self.table.setItem(row, 4, status_item)
+                self.table.setItem(row, 5, link_item)
+                
+                if is_downloaded:
+                    green_color = QColor(204, 255, 204)
+                    for col in range(self.table.columnCount()):
+                        self.table.item(row, col).setBackground(QBrush(green_color))
+
             self.table.resizeRowsToContents()
             self.start_download_btn.setEnabled(True)
 
@@ -154,9 +236,7 @@ class DownloadTab(QWidget):
         items_to_download = []
         for i in range(self.table.rowCount()):
             if self.table.item(i, 0).checkState() == Qt.CheckState.Checked:
-                # --- PERUBAHAN DI SINI: Mengambil link dari kolom yang benar (indeks 5) ---
                 link = self.table.item(i, 5).text()
-                # --------------------------------------------------------------------------
                 filename = self.table.item(i, 2).text()
                 judul_asli = self.table.item(i, 1).text()
                 filename = re.sub(r'[\\/*?:"<>|]', "", filename)
@@ -195,11 +275,14 @@ class DownloadTab(QWidget):
         self.log_box.append(message)
     
     def item_download_finished(self, row_index, success):
-        # --- PERUBAHAN DI SINI: Memperbarui status di kolom yang benar (indeks 4) ---
         status = "✅ Berhasil" if success else "❌ Gagal"
         self.table.setItem(row_index, 4, QTableWidgetItem(status))
-        # -------------------------------------------------------------------------
         self.table.item(row_index, 0).setCheckState(Qt.CheckState.Unchecked)
+
+        if success:
+            green_color = QColor(204, 255, 204)
+            for col in range(self.table.columnCount()):
+                self.table.item(row_index, col).setBackground(QBrush(green_color))
 
     def download_finished(self, message):
         self.log_box.append(f"\n{message}")
@@ -208,5 +291,3 @@ class DownloadTab(QWidget):
         self.browse_json_btn.setEnabled(True)
         self.progress_bar.setValue(100)
         self.download_worker = None
-        if self.current_json_path:
-            self.load_json_to_table(self.current_json_path)
