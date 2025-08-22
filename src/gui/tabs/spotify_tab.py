@@ -3,7 +3,7 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QComboBox, QSplitter
+    QComboBox, QSplitter, QFileDialog
 )
 from PyQt6.QtCore import Qt
 
@@ -130,8 +130,8 @@ class SpotifyTab(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(left_widget)
         splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 5) # Lebar awal kolom kiri
-        splitter.setStretchFactor(1, 5) # Lebar awal kolom kanan
+        splitter.setStretchFactor(0, 5) 
+        splitter.setStretchFactor(1, 5) 
         
         main_layout.addWidget(splitter)
 
@@ -265,11 +265,10 @@ class SpotifyTab(QWidget):
     def save_to_txt(self):
         tracks_to_save = []
         source_info = ""
+        playlist_name = ""
         
-        # --- PERUBAHAN LOGIKA DI SINI ---
         is_track_search_active = self.search_type_combo.currentText().lower() == 'lagu'
         
-        # Prioritaskan tabel daftar lagu jika ada isinya
         if self.track_table.rowCount() > 0:
             tracks_to_save = self.track_list
             source_info = "dari playlist yang dipilih"
@@ -280,7 +279,6 @@ class SpotifyTab(QWidget):
                 if self.search_results[selected_row_index]['type'] == 'playlist':
                      playlist_name = self.search_results[selected_row_index]['name']
             
-        # Jika tidak, dan pencarian lagu aktif, ambil dari hasil pencarian
         elif self.search_results_table.rowCount() > 0 and is_track_search_active:
             tracks_to_save = self.search_results
             source_info = "dari hasil pencarian lagu"
@@ -293,19 +291,29 @@ class SpotifyTab(QWidget):
         if not tracks_to_save:
             return
         
+        # --- PERUBAHAN DI SINI ---
         safe_playlist_name = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip().replace(" ", "_")
-        output_filename = f"spotify_{safe_playlist_name}.txt"
-        output_path = os.path.join(FOLDER_MUSIK_UTAMA, output_filename)
+        default_filename = f"spotify_{safe_playlist_name}.txt"
         
         os.makedirs(FOLDER_MUSIK_UTAMA, exist_ok=True)
         
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                for track in tracks_to_save:
-                    f.write(f"{track['artist']} - {track['name']}\n")
-            
-            QMessageBox.information(self, "Sukses", 
-                f"Daftar lagu {source_info} berhasil disimpan di:\n{output_path}\n\n"
-                "Anda sekarang bisa memilih file ini di tab '② Pencari Musik'.")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Gagal menyimpan file: {e}")
+        # Buka dialog "Save File"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Simpan Daftar Lagu",
+            os.path.join(FOLDER_MUSIK_UTAMA, default_filename),
+            "Text Files (*.txt);;All Files (*)"
+        )
+        
+        # Jika pengguna tidak membatalkan dialog
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    for track in tracks_to_save:
+                        f.write(f"{track['artist']} - {track['name']}\n")
+                
+                QMessageBox.information(self, "Sukses", 
+                    f"Daftar lagu {source_info} berhasil disimpan di:\n{file_path}\n\n"
+                    "Anda sekarang bisa memilih file ini di tab '② Pencari Musik'.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Gagal menyimpan file: {e}")
