@@ -4,7 +4,7 @@ import re
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel,
     QTextEdit, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView,
-    QRadioButton, QButtonGroup, QFileDialog
+    QRadioButton, QButtonGroup, QFileDialog, QGroupBox, QSpacerItem, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 
@@ -20,21 +20,14 @@ class DownloadTab(QWidget):
         self.current_json_path = ""
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        # Layout utama menggunakan QHBoxLayout untuk membagi area tabel dan kontrol
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
 
-        # Pilihan File JSON
-        json_layout = QHBoxLayout()
-        self.json_file_label = QLineEdit("Pilih file JSON hasil pencarian...")
-        self.json_file_label.setReadOnly(True)
-        self.browse_json_btn = QPushButton("Pilih File...")
-        self.browse_json_btn.clicked.connect(self.browse_json_file)
-        json_layout.addWidget(QLabel("File JSON:"))
-        json_layout.addWidget(self.json_file_label)
-        json_layout.addWidget(self.browse_json_btn)
+        # === KOLOM KIRI (Tabel dan Log) ===
+        left_layout = QVBoxLayout()
         
-        # Tabel
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["", "Judul Asli", "Judul Video YouTube", "Status", "URL"])
@@ -44,9 +37,36 @@ class DownloadTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setColumnHidden(4, True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(True) # Mengaktifkan word wrap
 
-        # Pilihan Download & Path
-        option_layout = QHBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setFixedHeight(150) # Memberi tinggi tetap untuk log box
+
+        left_layout.addWidget(self.table, 1) # Tabel mengambil sisa ruang
+        left_layout.addWidget(self.progress_bar)
+        left_layout.addWidget(QLabel("Log Proses:"))
+        left_layout.addWidget(self.log_box)
+        
+        # === KOLOM KANAN (Kontrol) ===
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(20)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- Grup 1: Pilih Sumber ---
+        source_group = QGroupBox("① Pilih Sumber")
+        source_group_layout = QVBoxLayout(source_group)
+        self.json_file_label = QLineEdit("Pilih file JSON...")
+        self.json_file_label.setReadOnly(True)
+        self.browse_json_btn = QPushButton("Pilih File JSON...")
+        self.browse_json_btn.clicked.connect(self.browse_json_file)
+        source_group_layout.addWidget(self.json_file_label)
+        source_group_layout.addWidget(self.browse_json_btn)
+        
+        # --- Grup 2: Opsi Unduhan ---
+        options_group = QGroupBox("② Opsi Unduhan")
+        options_group_layout = QVBoxLayout(options_group)
         self.mode_group = QButtonGroup()
         self.radio_audio = QRadioButton("Audio (.mp3)")
         self.radio_video = QRadioButton("Video")
@@ -59,44 +79,42 @@ class DownloadTab(QWidget):
         self.output_path_label = QLineEdit(os.path.abspath(FOLDER_DOWNLOAD_UTAMA))
         self.browse_output_btn = QPushButton("Pilih Folder Output")
         self.browse_output_btn.clicked.connect(self.browse_output_folder)
+        
+        options_group_layout.addWidget(self.radio_audio)
+        options_group_layout.addWidget(self.radio_video)
+        options_group_layout.addWidget(self.radio_both)
+        options_group_layout.addSpacing(10)
+        options_group_layout.addWidget(QLabel("Folder Penyimpanan:"))
+        options_group_layout.addWidget(self.output_path_label)
+        options_group_layout.addWidget(self.browse_output_btn)
 
-        option_layout.addWidget(self.radio_audio)
-        option_layout.addWidget(self.radio_video)
-        option_layout.addWidget(self.radio_both)
-        option_layout.addStretch()
-        option_layout.addWidget(self.output_path_label)
-        option_layout.addWidget(self.browse_output_btn)
-
-        # Tombol Aksi
-        action_layout = QHBoxLayout()
-        self.start_download_btn = QPushButton("Mulai Unduh Item Terpilih")
+        # --- Grup 3: Aksi ---
+        action_group = QGroupBox("③ Aksi")
+        action_group_layout = QVBoxLayout(action_group)
+        self.start_download_btn = QPushButton("Mulai Unduh Terpilih")
         self.start_download_btn.clicked.connect(self.start_download)
         self.start_download_btn.setEnabled(False)
         self.stop_download_btn = QPushButton("Hentikan")
         self.stop_download_btn.clicked.connect(self.stop_download)
         self.stop_download_btn.setEnabled(False)
-        action_layout.addWidget(self.start_download_btn)
-        action_layout.addWidget(self.stop_download_btn)
-        
-        # Progress & Log
-        self.progress_bar = QProgressBar()
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
+        action_group_layout.addWidget(self.start_download_btn)
+        action_group_layout.addWidget(self.stop_download_btn)
 
-        layout.addLayout(json_layout)
-        layout.addWidget(self.table, 1)
-        layout.addLayout(option_layout)
-        layout.addLayout(action_layout)
-        layout.addWidget(self.progress_bar)
-        layout.addWidget(QLabel("Log Proses:"))
-        layout.addWidget(self.log_box)
+        right_layout.addWidget(source_group)
+        right_layout.addWidget(options_group)
+        right_layout.addWidget(action_group)
+        right_layout.addStretch() # Mendorong semua grup ke atas
+
+        # Menambahkan kedua kolom ke layout utama
+        main_layout.addLayout(left_layout, 7)  # Kolom kiri mengambil 70% ruang
+        main_layout.addLayout(right_layout, 3) # Kolom kanan mengambil 30% ruang
 
     def browse_json_file(self):
         os.makedirs(FOLDER_HASIL_JSON, exist_ok=True)
         file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File JSON", FOLDER_HASIL_JSON, "JSON Files (*.json)")
         if file_path:
             self.current_json_path = file_path
-            self.json_file_label.setText(file_path)
+            self.json_file_label.setText(os.path.basename(file_path)) # Tampilkan nama file saja
             self.load_json_to_table(file_path)
     
     def load_json_to_table(self, file_path):
@@ -119,6 +137,7 @@ class DownloadTab(QWidget):
                 self.table.setItem(row, 3, QTableWidgetItem(status))
                 self.table.setItem(row, 4, QTableWidgetItem(item.get("link_youtube", "")))
             
+            self.table.resizeRowsToContents() # Sesuaikan tinggi baris
             self.start_download_btn.setEnabled(True)
 
         except Exception as e:
@@ -126,7 +145,7 @@ class DownloadTab(QWidget):
             self.start_download_btn.setEnabled(False)
             
     def browse_output_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Pilih Folder Output", FOLDER_DOWNLOAD_UTAMA)
+        folder = QFileDialog.getExistingDirectory(self, "Pilih Folder Output", self.output_path_label.text())
         if folder:
             self.output_path_label.setText(folder)
 
